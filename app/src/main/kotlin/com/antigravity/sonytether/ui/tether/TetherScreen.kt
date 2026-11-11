@@ -1767,7 +1767,32 @@ private fun LumepicLoginDialog(
     var manualCookie by remember { mutableStateOf("") }
     var detectedCookies by remember { mutableStateOf<String?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var currentWebUrl by remember { mutableStateOf("https://photographer.lumepic.com/auth") }
     val cookieManager = remember { CookieManager.getInstance() }
+
+    fun collectLumepicCookies(): String {
+        val targets = listOf(
+            "https://photographer.lumepic.com",
+            "https://www.lumepic.com",
+            "https://lumepic.com"
+        )
+        val cookieMap = mutableMapOf<String, String>()
+        for (target in targets) {
+            val raw = cookieManager.getCookie(target).orEmpty()
+            raw.split(";").forEach { item ->
+                val trimmed = item.trim()
+                val eqIdx = trimmed.indexOf('=')
+                if (eqIdx > 0) {
+                    val key = trimmed.substring(0, eqIdx).trim()
+                    val value = trimmed.substring(eqIdx + 1).trim()
+                    if (key.isNotEmpty() && value.isNotEmpty()) {
+                        cookieMap[key] = value
+                    }
+                }
+            }
+        }
+        return cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1799,7 +1824,7 @@ private fun LumepicLoginDialog(
 
                 if (selectedTab == 0) {
                     Text(
-                        text = "1. Iniciá sesión con tu cuenta de fotógrafo.\n2. Al entrar a tu panel de álbumes, tocá 'Detectar Sesión'.",
+                        text = "1. Iniciá sesión con tu cuenta (Google o email).\n2. Al entrar al panel de álbumes, se detectará la sesión automáticamente (o tocá 'Detectar Sesión').",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1807,20 +1832,32 @@ private fun LumepicLoginDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(340.dp)
+                            .height(420.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .border(1.dp, Color.Gray.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                     ) {
                         AndroidView(
                             factory = { ctx ->
                                 WebView(ctx).apply {
+                                    cookieManager.setAcceptCookie(true)
+                                    cookieManager.setAcceptThirdPartyCookies(this, true)
+
                                     settings.javaScriptEnabled = true
                                     settings.domStorageEnabled = true
-                                    settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                                    settings.databaseEnabled = true
+                                    settings.useWideViewPort = true
+                                    settings.loadWithOverviewMode = true
+                                    settings.javaScriptCanOpenWindowsAutomatically = true
+                                    settings.userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+
                                     webViewClient = object : WebViewClient() {
                                         override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
-                                            val host = request?.url?.host?.lowercase() ?: return false
-                                            if (host.endsWith("lumepic.com") || host.endsWith("google.com") || host.endsWith("gstatic.com")) {
+                                            val url = request?.url?.toString() ?: return false
+                                            val host = request.url?.host?.lowercase() ?: return false
+                                            if (host.contains("lumepic") || host.contains("google") || host.contains("gstatic") || host.contains("apple") || host.contains("facebook")) {
+                                                return false
+                                            }
+                                            if (url.startsWith("http://") || url.startsWith("https://")) {
                                                 return false
                                             }
                                             return true
@@ -1828,13 +1865,23 @@ private fun LumepicLoginDialog(
 
                                         override fun onPageFinished(view: WebView?, url: String?) {
                                             super.onPageFinished(view, url)
-                                            val currentCookies = cookieManager.getCookie("https://photographer.lumepic.com")
-                                            if (!currentCookies.isNullOrBlank()) {
-                                                detectedCookies = currentCookies
+                                            cookieManager.flush()
+                                            currentWebUrl = url.orEmpty()
+                                            val merged = collectLumepicCookies()
+                                            if (merged.isNotBlank()) {
+                                                detectedCookies = merged
+                                            }
+
+                                            // Si llegamos a /albums o hay token de sesión, autologin
+                                            val cur = url.orEmpty()
+                                            val hasToken = merged.contains("lumepic") || merged.contains("session") || merged.contains("token") || merged.length > 30
+                                            if (cur.contains("lumepic.com") && (cur.contains("/albums") || cur.contains("/photographer/albums")) && hasToken) {
+                                                onLoginSuccess(merged)
+                                                onDismiss()
                                             }
                                         }
                                     }
-                                    loadUrl("https://photographer.lumepic.com/auth/login")
+                                    loadUrl("https://photographer.lumepic.com/auth")
                                 }
                             },
                             modifier = Modifier.fillMaxSize()
@@ -1843,12 +1890,13 @@ private fun LumepicLoginDialog(
 
                     Button(
                         onClick = {
-                            val cookies = detectedCookies ?: cookieManager.getCookie("https://photographer.lumepic.com")
-                            if (!cookies.isNullOrBlank() && (cookies.contains("lumepic") || cookies.contains("session") || cookies.length > 20)) {
+                            cookieManager.flush()
+                            val cookies = detectedCookies ?: collectLumepicCookies()
+                            if (!cookies.isNullOrBlank() && (cookies.contains("lumepic") || cookies.contains("session") || cookies.contains("token") || cookies.length > 20)) {
                                 onLoginSuccess(cookies)
                                 onDismiss()
                             } else {
-                                statusMessage = "Aún no se detectaron cookies de sesión activas. Asegurate de iniciar sesión en la web de arriba."
+                                statusMessage = "Aún no se detectaron cookies de sesión activas. Iniciá sesión arriba y aguardá que cargue el panel."
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
