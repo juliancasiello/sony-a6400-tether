@@ -36,5 +36,6 @@ data class MomentiaUploadState(
     val uploadProgress: Float = 0f,
     val uploadedCount: Int = 0,
     val failedCount: Int = 0,
+    val queueSize: Int = 0,
     val lastError: String? = null
 )

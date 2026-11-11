@@ -41,6 +41,7 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
     val garminHeartbeatMinutes: StateFlow<Int> = engine.garminHeartbeatMinutes
     val isComparingOriginal: StateFlow<Boolean> = engine.isComparingOriginal
     val isBwCopyEnabled: StateFlow<Boolean> = engine.isBwCopyEnabled
+    val isWifiOnlyUpload: StateFlow<Boolean> = engine.isWifiOnlyUpload
     val updateState: StateFlow<AppUpdateState> = engine.updateManager.state
     val currentVersionName: String get() = engine.updateManager.currentVersionName
 
@@ -50,6 +51,10 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleBwCopy() {
         engine.toggleBwCopy()
+    }
+
+    fun setWifiOnlyUpload(enabled: Boolean) {
+        engine.setWifiOnlyUpload(enabled)
     }
 
     fun setComparingOriginal(comparing: Boolean) {
@@ -133,6 +138,10 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
         engine.momentiaManager.refreshEvents()
     }
 
+    fun retryMomentiaFailedUploads() {
+        engine.momentiaManager.retryFailedUploads()
+    }
+
     // Métodos de Lumepic
     fun setLumepicCookies(cookies: String, userName: String? = null) {
         engine.lumepicManager.setCookies(cookies, userName)
@@ -148,6 +157,10 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
 
     fun refreshLumepicAlbums() {
         engine.lumepicManager.refreshAlbums()
+    }
+
+    fun retryLumepicFailedUploads() {
+        engine.lumepicManager.retryFailedUploads()
     }
 
     fun logoutLumepic() {

@@ -44,6 +44,7 @@ class TetherForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var heartbeatJob: Job? = null
     private var wasUsbConnected: Boolean? = null
+    private var hasAlertedLowBattery: Boolean = false
 
     companion object {
         fun start(context: Context) {
@@ -222,20 +223,45 @@ class TetherForegroundService : Service() {
 
                 val engine = TetherEngine.getInstance(this@TetherForegroundService)
                 val usbOk = engine.isUsbCameraConnected.value
-                val uploaded = engine.momentiaManager.state.value.uploadedCount
-                val pending = engine.pendingCountdownSeconds.value
+                val mUp = engine.momentiaManager.state.value.uploadedCount
+                val mQueue = engine.momentiaManager.state.value.queueSize
+                val lUp = engine.lumepicManager.state.value.uploadedCount
+                val lQueue = engine.lumepicManager.state.value.queueSize
                 val batteryPct = getBatteryPercentage()
+
+                // Alerta proactiva de batería baja al Garmin
+                if (batteryPct in 1..15 && !hasAlertedLowBattery) {
+                    hasAlertedLowBattery = true
+                    sendGarminAlert(
+                        title = "🔋 Batería Baja: $batteryPct%",
+                        message = "Conectá un powerbank al celular para mantener activo el tethering."
+                    )
+                } else if (batteryPct > 20) {
+                    hasAlertedLowBattery = false
+                }
 
                 val (title, statusText) = if (usbOk) {
                     "✅ Sony Tether: Todo OK" to "USB Conectado"
                 } else {
                     "⚠️ Sony Tether: Cable Desconectado" to "Esperando USB"
                 }
-                val extraInfo = if (pending != null) " · 1 en espera" else ""
+
+                val counts = buildString {
+                    append("$statusText · ")
+                    val parts = mutableListOf<String>()
+                    if (engine.momentiaManager.state.value.isAutoUploadEnabled) {
+                        parts.add("M: $mUp" + if (mQueue > 0) "(⏳$mQueue)" else "")
+                    }
+                    if (engine.lumepicManager.state.value.isAutoUploadEnabled) {
+                        parts.add("L: $lUp" + if (lQueue > 0) "(⏳$lQueue)" else "")
+                    }
+                    if (parts.isNotEmpty()) append(parts.joinToString(" + ") + " · ")
+                    append("Bat: $batteryPct%")
+                }
 
                 sendGarminNotification(
                     title = title,
-                    message = "$statusText · $uploaded subidas · Batería: $batteryPct%$extraInfo"
+                    message = counts
                 )
             }
         }
@@ -254,17 +280,23 @@ class TetherForegroundService : Service() {
         val engine = TetherEngine.getInstance(this)
         val isUsb = engine.isUsbCameraConnected.value
         val momentiaState = engine.momentiaManager.state.value
+        val lumepicState = engine.lumepicManager.state.value
         val eventName = engine.activeEventName.value
         val latest = engine.latestPhoto.value
 
         val title = if (isUsb) "📷 Sony a6400 Conectada" else "📷 Sony Tether Activo"
         val content = buildString {
-            append("Evento: $eventName")
+            append("📁 $eventName")
             if (momentiaState.isLoggedIn && momentiaState.isAutoUploadEnabled) {
-                append(" · ${momentiaState.uploadedCount} subidas a Momentia")
+                append(" · M: ${momentiaState.uploadedCount}")
+                if (momentiaState.queueSize > 0) append("(⏳${momentiaState.queueSize})")
+            }
+            if (lumepicState.isLoggedIn && lumepicState.isAutoUploadEnabled) {
+                append(" · L: ${lumepicState.uploadedCount}")
+                if (lumepicState.queueSize > 0) append("(⏳${lumepicState.queueSize})")
             }
             if (latest != null) {
-                append(" · Última: ${latest.fileName}")
+                append(" · ${latest.fileName}")
             }
         }
 

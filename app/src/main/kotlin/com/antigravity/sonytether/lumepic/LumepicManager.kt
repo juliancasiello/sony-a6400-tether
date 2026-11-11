@@ -40,6 +40,10 @@ class LumepicManager(
     val state: StateFlow<LumepicUploadState> = _state.asStateFlow()
 
     private val uploadQueue = Channel<LumepicUploadItem>(Channel.UNLIMITED)
+    private val failedItems = java.util.Collections.synchronizedList(mutableListOf<LumepicUploadItem>())
+
+    var isWifiOnlyProvider: () -> Boolean = { false }
+    var isWifiConnectedProvider: () -> Boolean = { true }
 
     var onPhotoUploadFinished: ((fileName: String, success: Boolean) -> Unit)? = null
 
@@ -161,12 +165,34 @@ class LumepicManager(
             return
         }
 
+        _state.update { it.copy(queueSize = it.queueSize + 1) }
         uploadQueue.trySend(LumepicUploadItem(fileName, imageBytes, System.currentTimeMillis()))
+    }
+
+    /**
+     * Reintenta las fotos fallidas de Lumepic tras cortes de red.
+     */
+    fun retryFailedUploads() {
+        val toRetry = synchronized(failedItems) {
+            val list = failedItems.toList()
+            failedItems.clear()
+            list
+        }
+        if (toRetry.isEmpty()) return
+
+        _state.update { it.copy(failedCount = 0, lastError = null) }
+        for (item in toRetry) {
+            enqueuePhotoUpload(item.fileName, item.bytes)
+        }
     }
 
     private fun startUploadWorker() {
         scope.launch {
             for (item in uploadQueue) {
+                while (isWifiOnlyProvider() && !isWifiConnectedProvider()) {
+                    delay(4000)
+                }
+
                 val fileName = item.fileName
                 val bytes = item.bytes
 
@@ -175,6 +201,7 @@ class LumepicManager(
                 val albumId = currentState.selectedAlbumId
 
                 if (cookies.isNullOrBlank() || albumId.isNullOrBlank()) {
+                    _state.update { it.copy(queueSize = maxOf(0, it.queueSize - 1)) }
                     continue
                 }
 
@@ -186,72 +213,88 @@ class LumepicManager(
                     )
                 }
 
-                try {
-                    // 1. Registrar fotografía en Lumepic (batch-create)
-                    _state.update { it.copy(uploadProgress = 0.2f) }
-                    val createRes = apiClient.batchCreatePhotograph(
-                        cookies = cookies,
-                        albumId = albumId,
-                        fileName = fileName,
-                        imageBytes = bytes
-                    )
+                var success = false
+                var attempts = 0
+                val maxAttempts = 3
 
-                    if (createRes.isFailure) {
-                        throw createRes.exceptionOrNull() ?: Exception("Error en batch-create de Lumepic")
-                    }
-
-                    val photographId = createRes.getOrThrow()
-
-                    // 2. Obtener URL prefirmada de S3 (batch-presign)
-                    _state.update { it.copy(uploadProgress = 0.4f) }
-                    val presignRes = apiClient.batchPresignPhotograph(
-                        cookies = cookies,
-                        albumId = albumId,
-                        photographId = photographId
-                    )
-
-                    if (presignRes.isFailure) {
-                        throw presignRes.exceptionOrNull() ?: Exception("Error en batch-presign de Lumepic")
-                    }
-
-                    val uploadUrl = presignRes.getOrThrow()
-
-                    // 3. Subida binaria directa a S3 de Lumepic
-                    val uploadRes = apiClient.uploadToS3(uploadUrl, bytes) { p ->
-                        _state.update { it.copy(uploadProgress = 0.4f + p * 0.55f) }
-                    }
-
-                    if (uploadRes.isFailure) {
-                        throw uploadRes.exceptionOrNull() ?: Exception("Error en subida binaria a S3")
-                    }
-
-                    Log.i(TAG, "Foto $fileName subida exitosamente a Lumepic (Álbum $albumId)")
-                    _state.update {
-                        it.copy(
-                            isUploading = false,
-                            currentUploadingFile = null,
-                            uploadProgress = 1.0f,
-                            uploadedCount = it.uploadedCount + 1,
-                            lastError = null
+                while (!success && attempts < maxAttempts) {
+                    attempts++
+                    try {
+                        // 1. Registrar fotografía en Lumepic (batch-create)
+                        _state.update { it.copy(uploadProgress = 0.2f) }
+                        val createRes = apiClient.batchCreatePhotograph(
+                            cookies = cookies,
+                            albumId = albumId,
+                            fileName = fileName,
+                            imageBytes = bytes
                         )
-                    }
 
-                    onPhotoUploadFinished?.invoke(fileName, true)
+                        if (createRes.isFailure) {
+                            throw createRes.exceptionOrNull() ?: Exception("Error en batch-create de Lumepic")
+                        }
 
-                    // Pausa de cortesía para respetar Rate Limits de Lumepic
-                    delay(600)
-                } catch (t: Throwable) {
-                    Log.e(TAG, "Error en subida de $fileName a Lumepic: ${t.message}", t)
-                    _state.update {
-                        it.copy(
-                            isUploading = false,
-                            currentUploadingFile = null,
-                            failedCount = it.failedCount + 1,
-                            lastError = t.message
+                        val photographId = createRes.getOrThrow()
+
+                        // 2. Obtener URL prefirmada de S3 (batch-presign)
+                        _state.update { it.copy(uploadProgress = 0.4f) }
+                        val presignRes = apiClient.batchPresignPhotograph(
+                            cookies = cookies,
+                            albumId = albumId,
+                            photographId = photographId
                         )
+
+                        if (presignRes.isFailure) {
+                            throw presignRes.exceptionOrNull() ?: Exception("Error en batch-presign de Lumepic")
+                        }
+
+                        val uploadUrl = presignRes.getOrThrow()
+
+                        // 3. Subida binaria directa a S3 de Lumepic
+                        val uploadRes = apiClient.uploadToS3(uploadUrl, bytes) { p ->
+                            _state.update { it.copy(uploadProgress = 0.4f + p * 0.55f) }
+                        }
+
+                        if (uploadRes.isFailure) {
+                            throw uploadRes.exceptionOrNull() ?: Exception("Error en subida binaria a S3")
+                        }
+
+                        Log.i(TAG, "Foto $fileName subida exitosamente a Lumepic (Álbum $albumId, Intento $attempts)")
+                        success = true
+                        _state.update {
+                            it.copy(
+                                isUploading = false,
+                                currentUploadingFile = null,
+                                uploadProgress = 1.0f,
+                                uploadedCount = it.uploadedCount + 1,
+                                queueSize = maxOf(0, it.queueSize - 1),
+                                lastError = null
+                            )
+                        }
+
+                        onPhotoUploadFinished?.invoke(fileName, true)
+
+                        // Pausa de cortesía para respetar Rate Limits de Lumepic
+                        delay(600)
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "Intento $attempts/$maxAttempts fallido para $fileName en Lumepic: ${t.message}")
+                        if (attempts < maxAttempts) {
+                            delay(1500L * attempts)
+                        } else {
+                            Log.e(TAG, "Subida fallida definitiva de $fileName a Lumepic tras $maxAttempts intentos", t)
+                            failedItems.add(item)
+                            _state.update {
+                                it.copy(
+                                    isUploading = false,
+                                    currentUploadingFile = null,
+                                    failedCount = it.failedCount + 1,
+                                    queueSize = maxOf(0, it.queueSize - 1),
+                                    lastError = t.message
+                                )
+                            }
+                            onPhotoUploadFinished?.invoke(fileName, false)
+                            delay(1000)
+                        }
                     }
-                    onPhotoUploadFinished?.invoke(fileName, false)
-                    delay(1000)
                 }
             }
         }

@@ -103,6 +103,31 @@ class TetherEngine(private val context: Context) {
     private val _isBwCopyEnabled = MutableStateFlow(false)
     val isBwCopyEnabled: StateFlow<Boolean> = _isBwCopyEnabled.asStateFlow()
 
+    // Toggle para subir únicamente conectado a Wi-Fi (ahorro de datos móviles)
+    private val _isWifiOnlyUpload = MutableStateFlow(false)
+    val isWifiOnlyUpload: StateFlow<Boolean> = _isWifiOnlyUpload.asStateFlow()
+
+    fun setWifiOnlyUpload(enabled: Boolean) {
+        _isWifiOnlyUpload.value = enabled
+        prefs.edit().putBoolean("wifi_only_upload", enabled).apply()
+        addLog(if (enabled) "📶 Subida configurada en: SOLO WI-FI (ahorro de datos móviles)" else "📶 Subida configurada en: WI-FI Y DATOS MÓVILES")
+        if (!enabled || isWifiConnected()) {
+            momentiaManager.retryFailedUploads()
+            lumepicManager.retryFailedUploads()
+        }
+    }
+
+    fun isWifiConnected(): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return false
+            val network = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(network) ?: return false
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private val _logs = MutableStateFlow<List<String>>(emptyList())
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
 
@@ -163,6 +188,25 @@ class TetherEngine(private val context: Context) {
 
         _garminHeartbeatMinutes.value = prefs.getInt("garmin_heartbeat_minutes", 5)
         _isBwCopyEnabled.value = prefs.getBoolean("bw_copy_enabled", false)
+        _isWifiOnlyUpload.value = prefs.getBoolean("wifi_only_upload", false)
+
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            cm?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onCapabilitiesChanged(network: android.net.Network, networkCapabilities: android.net.NetworkCapabilities) {
+                    if (networkCapabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) && _isWifiOnlyUpload.value) {
+                        addLog("📶 Wi-Fi detectado: reanudando subidas a la nube...")
+                        momentiaManager.retryFailedUploads()
+                        lumepicManager.retryFailedUploads()
+                    }
+                }
+            })
+        } catch (_: Exception) {}
+
+        momentiaManager.isWifiOnlyProvider = { _isWifiOnlyUpload.value }
+        momentiaManager.isWifiConnectedProvider = { isWifiConnected() }
+        lumepicManager.isWifiOnlyProvider = { _isWifiOnlyUpload.value }
+        lumepicManager.isWifiConnectedProvider = { isWifiConnected() }
 
         momentiaManager.onPhotoUploadFinished = { fileName, success ->
             _photos.update { list ->

@@ -151,6 +151,7 @@ fun TetherScreen(
     val garminHeartbeatMinutes by viewModel.garminHeartbeatMinutes.collectAsStateWithLifecycle()
     val isComparingOriginal by viewModel.isComparingOriginal.collectAsStateWithLifecycle()
     val isBwCopyEnabled by viewModel.isBwCopyEnabled.collectAsStateWithLifecycle()
+    val isWifiOnlyUpload by viewModel.isWifiOnlyUpload.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
 
     var isEditingPreset by rememberSaveable { mutableStateOf(false) }
@@ -396,6 +397,8 @@ fun TetherScreen(
             onGarminHeartbeatChange = { viewModel.setGarminHeartbeatMinutes(it) },
             isBwCopyEnabled = isBwCopyEnabled,
             onBwCopyChange = { viewModel.setBwCopyEnabled(it) },
+            isWifiOnlyUpload = isWifiOnlyUpload,
+            onWifiOnlyUploadChange = { viewModel.setWifiOnlyUpload(it) },
             onEventNameChange = { viewModel.setActiveEventName(it) },
             onDeleteEvent = { viewModel.deleteEventPhotos(it) },
             onClearHistory = { viewModel.clearDownloadedHistory() },
@@ -420,6 +423,7 @@ fun TetherScreen(
             onSelectAlbumClick = { showMomentiaAlbumPicker = true },
             onToggleAutoUpload = { viewModel.setMomentiaAutoUpload(it) },
             onRefreshAlbums = { viewModel.refreshMomentiaEvents() },
+            onRetryFailed = { viewModel.retryMomentiaFailedUploads() },
             onDismiss = { showMomentiaDialog = false }
         )
     }
@@ -454,6 +458,7 @@ fun TetherScreen(
             onSelectAlbumClick = { showLumepicAlbumPicker = true },
             onToggleAutoUpload = { viewModel.setLumepicAutoUpload(it) },
             onRefreshAlbums = { viewModel.refreshLumepicAlbums() },
+            onRetryFailed = { viewModel.retryLumepicFailedUploads() },
             onDismiss = { showLumepicDialog = false }
         )
     }
@@ -624,8 +629,9 @@ private fun MomentiaStatusPill(
                     strokeWidth = 2.dp,
                     color = contentColor
                 )
+                val queueText = if (state.queueSize > 0) " (${state.queueSize})" else ""
                 Text(
-                    text = "Subiendo",
+                    text = "Subiendo$queueText",
                     style = MaterialTheme.typography.labelSmall,
                     color = contentColor,
                     fontWeight = FontWeight.Bold
@@ -637,8 +643,9 @@ private fun MomentiaStatusPill(
                     tint = contentColor,
                     modifier = Modifier.size(15.dp)
                 )
+                val queueText = if (state.queueSize > 0) " (⏳${state.queueSize})" else ""
                 Text(
-                    text = "${state.uploadedCount} subidas",
+                    text = "${state.uploadedCount} subidas$queueText",
                     style = MaterialTheme.typography.labelSmall,
                     color = contentColor,
                     fontWeight = FontWeight.Bold
@@ -959,6 +966,7 @@ private fun MomentiaStatusDialog(
     onSelectAlbumClick: () -> Unit,
     onToggleAutoUpload: (Boolean) -> Unit,
     onRefreshAlbums: () -> Unit,
+    onRetryFailed: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1030,8 +1038,23 @@ private fun MomentiaStatusDialog(
                         horizontalArrangement = Arrangement.SpaceAround
                     ) {
                         Text("Subidas: ${state.uploadedCount}", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+                        if (state.queueSize > 0) {
+                            Text("En cola: ${state.queueSize}", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF9E86FF), fontWeight = FontWeight.Bold)
+                        }
                         if (state.failedCount > 0) {
                             Text("Fallidas: ${state.failedCount}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+
+                    if (state.failedCount > 0) {
+                        OutlinedButton(
+                            onClick = onRetryFailed,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFFA000))
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Reintentar ${state.failedCount} subidas fallidas")
                         }
                     }
 
@@ -1077,6 +1100,8 @@ private fun EventSettingsDialog(
     onGarminHeartbeatChange: (Int) -> Unit,
     isBwCopyEnabled: Boolean,
     onBwCopyChange: (Boolean) -> Unit,
+    isWifiOnlyUpload: Boolean,
+    onWifiOnlyUploadChange: (Boolean) -> Unit,
     onEventNameChange: (String) -> Unit,
     onDeleteEvent: (String) -> Unit,
     onClearHistory: () -> Unit,
@@ -1147,6 +1172,37 @@ private fun EventSettingsDialog(
                         Switch(
                             checked = isBwCopyEnabled,
                             onCheckedChange = onBwCopyChange
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // SECCIÓN SUBIR SOLO POR WI-FI
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Subir solo por Wi-Fi", fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Ahorra datos móviles. Las fotos se guardan en el celular y esperan a que te conectes a Wi-Fi para subir a la nube.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = isWifiOnlyUpload,
+                            onCheckedChange = onWifiOnlyUploadChange
                         )
                     }
                 }
@@ -1513,8 +1569,9 @@ private fun LumepicStatusPill(
                     strokeWidth = 2.dp,
                     color = contentColor
                 )
+                val queueText = if (state.queueSize > 0) " (${state.queueSize})" else ""
                 Text(
-                    text = "Lumepic...",
+                    text = "Lumi...$queueText",
                     style = MaterialTheme.typography.labelSmall,
                     color = contentColor,
                     fontWeight = FontWeight.Bold
@@ -1526,8 +1583,9 @@ private fun LumepicStatusPill(
                     tint = contentColor,
                     modifier = Modifier.size(15.dp)
                 )
+                val queueText = if (state.queueSize > 0) " (⏳${state.queueSize})" else ""
                 Text(
-                    text = "${state.uploadedCount} L",
+                    text = "${state.uploadedCount} L$queueText",
                     style = MaterialTheme.typography.labelSmall,
                     color = contentColor,
                     fontWeight = FontWeight.Bold
@@ -1572,6 +1630,7 @@ private fun LumepicStatusDialog(
     onSelectAlbumClick: () -> Unit,
     onToggleAutoUpload: (Boolean) -> Unit,
     onRefreshAlbums: () -> Unit,
+    onRetryFailed: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -1645,8 +1704,23 @@ private fun LumepicStatusDialog(
                         horizontalArrangement = Arrangement.SpaceAround
                     ) {
                         Text("Subidas: ${state.uploadedCount}", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+                        if (state.queueSize > 0) {
+                            Text("En cola: ${state.queueSize}", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF9E86FF), fontWeight = FontWeight.Bold)
+                        }
                         if (state.failedCount > 0) {
                             Text("Fallidas: ${state.failedCount}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+
+                    if (state.failedCount > 0) {
+                        OutlinedButton(
+                            onClick = onRetryFailed,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFFA000))
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Reintentar ${state.failedCount} subidas fallidas")
                         }
                     }
 
@@ -1744,6 +1818,14 @@ private fun LumepicLoginDialog(
                                     settings.domStorageEnabled = true
                                     settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
                                     webViewClient = object : WebViewClient() {
+                                        override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                                            val host = request?.url?.host?.lowercase() ?: return false
+                                            if (host.endsWith("lumepic.com") || host.endsWith("google.com") || host.endsWith("gstatic.com")) {
+                                                return false
+                                            }
+                                            return true
+                                        }
+
                                         override fun onPageFinished(view: WebView?, url: String?) {
                                             super.onPageFinished(view, url)
                                             val currentCookies = cookieManager.getCookie("https://photographer.lumepic.com")

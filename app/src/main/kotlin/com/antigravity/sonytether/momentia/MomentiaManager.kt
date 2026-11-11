@@ -40,6 +40,10 @@ class MomentiaManager(
     val state: StateFlow<MomentiaUploadState> = _state.asStateFlow()
 
     private val uploadQueue = Channel<UploadItem>(Channel.UNLIMITED)
+    private val failedItems = java.util.Collections.synchronizedList(mutableListOf<UploadItem>())
+
+    var isWifiOnlyProvider: () -> Boolean = { false }
+    var isWifiConnectedProvider: () -> Boolean = { true }
 
     var onPhotoUploadFinished: ((fileName: String, success: Boolean) -> Unit)? = null
 
@@ -169,12 +173,34 @@ class MomentiaManager(
             return
         }
 
+        _state.update { it.copy(queueSize = it.queueSize + 1) }
         uploadQueue.trySend(UploadItem(fileName, imageBytes, System.currentTimeMillis()))
+    }
+
+    /**
+     * Reintenta todas las fotos que fallaron por cortes de red o microcortes de 4G.
+     */
+    fun retryFailedUploads() {
+        val toRetry = synchronized(failedItems) {
+            val list = failedItems.toList()
+            failedItems.clear()
+            list
+        }
+        if (toRetry.isEmpty()) return
+
+        _state.update { it.copy(failedCount = 0, lastError = null) }
+        for (item in toRetry) {
+            enqueuePhotoUpload(item.fileName, item.bytes)
+        }
     }
 
     private fun startUploadWorker() {
         scope.launch {
             for (item in uploadQueue) {
+                while (isWifiOnlyProvider() && !isWifiConnectedProvider()) {
+                    delay(4000)
+                }
+
                 val fileName = item.fileName
                 val bytes = item.bytes
                 val timestampMs = item.timestampMs
@@ -184,6 +210,7 @@ class MomentiaManager(
                 val eventId = currentState.selectedEventId
 
                 if (token.isNullOrBlank() || eventId.isNullOrBlank()) {
+                    _state.update { it.copy(queueSize = maxOf(0, it.queueSize - 1)) }
                     continue
                 }
 
@@ -195,89 +222,107 @@ class MomentiaManager(
                     )
                 }
 
-                try {
-                    // 1. Pedir URL prefirmada
-                    val presignedRes = apiClient.requestUploadUrl(
-                        token = token,
-                        eventId = eventId,
-                        filename = fileName,
-                        fileSizeBytes = bytes.size.toLong(),
-                        timestampMs = timestampMs
-                    )
+                var success = false
+                var attempts = 0
+                val maxAttempts = 3
 
-                    if (presignedRes.isFailure) {
-                        throw presignedRes.exceptionOrNull() ?: Exception("Error solicitando URL")
-                    }
+                while (!success && attempts < maxAttempts) {
+                    attempts++
+                    try {
+                        // 1. Pedir URL prefirmada
+                        val presignedRes = apiClient.requestUploadUrl(
+                            token = token,
+                            eventId = eventId,
+                            filename = fileName,
+                            fileSizeBytes = bytes.size.toLong(),
+                            timestampMs = timestampMs
+                        )
 
-                    val presigned = presignedRes.getOrThrow()
+                        if (presignedRes.isFailure) {
+                            throw presignedRes.exceptionOrNull() ?: Exception("Error solicitando URL")
+                        }
 
-                    if (presigned.alreadyUploaded) {
-                        Log.i(TAG, "La foto $fileName ya estaba subida en Momentia.")
+                        val presigned = presignedRes.getOrThrow()
+
+                        if (presigned.alreadyUploaded) {
+                            Log.i(TAG, "La foto $fileName ya estaba subida en Momentia.")
+                            success = true
+                            _state.update {
+                                it.copy(
+                                    isUploading = false,
+                                    currentUploadingFile = null,
+                                    uploadedCount = it.uploadedCount + 1,
+                                    queueSize = maxOf(0, it.queueSize - 1)
+                                )
+                            }
+                            onPhotoUploadFinished?.invoke(fileName, true)
+                            delay(400)
+                            break
+                        }
+
+                        val s3Url = presigned.uploadUrl ?: throw Exception("URL de S3 no provista por el servidor")
+                        val s3Key = presigned.s3Key ?: throw Exception("s3_key no provista por el servidor")
+
+                        // 2. Subida binaria directa a AWS S3
+                        _state.update { it.copy(uploadProgress = 0.5f) }
+                        val uploadRes = apiClient.uploadToS3(s3Url, bytes) { p ->
+                            _state.update { it.copy(uploadProgress = 0.5f + p * 0.4f) }
+                        }
+
+                        if (uploadRes.isFailure) {
+                            throw uploadRes.exceptionOrNull() ?: Exception("Error al subir archivo a almacenamiento")
+                        }
+
+                        // 3. Confirmar subida en Momentia (idéntico al frontend web)
+                        val confirmRes = apiClient.confirmUpload(
+                            token = token,
+                            eventId = eventId,
+                            fileId = presigned.fileId,
+                            s3Key = s3Key,
+                            filename = fileName,
+                            clientHash = presigned.clientHash
+                        )
+
+                        if (confirmRes.isFailure) {
+                            throw confirmRes.exceptionOrNull() ?: Exception("Error confirmando subida")
+                        }
+
+                        Log.i(TAG, "Foto $fileName subida exitosamente a Momentia (Intento $attempts)")
+                        success = true
                         _state.update {
                             it.copy(
                                 isUploading = false,
                                 currentUploadingFile = null,
-                                uploadedCount = it.uploadedCount + 1
+                                uploadProgress = 1.0f,
+                                uploadedCount = it.uploadedCount + 1,
+                                queueSize = maxOf(0, it.queueSize - 1),
+                                lastError = null
                             )
                         }
                         onPhotoUploadFinished?.invoke(fileName, true)
-                        delay(400)
-                        continue
+
+                        // Pausa de cortesía para no saturar conexiones
+                        delay(500)
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "Intento $attempts/$maxAttempts fallido para $fileName en Momentia: ${t.message}")
+                        if (attempts < maxAttempts) {
+                            delay(1500L * attempts)
+                        } else {
+                            Log.e(TAG, "Subida fallida definitiva de $fileName a Momentia tras $maxAttempts intentos", t)
+                            failedItems.add(item)
+                            _state.update {
+                                it.copy(
+                                    isUploading = false,
+                                    currentUploadingFile = null,
+                                    failedCount = it.failedCount + 1,
+                                    queueSize = maxOf(0, it.queueSize - 1),
+                                    lastError = t.message
+                                )
+                            }
+                            onPhotoUploadFinished?.invoke(fileName, false)
+                            delay(1000)
+                        }
                     }
-
-                    val s3Url = presigned.uploadUrl ?: throw Exception("URL de S3 no provista por el servidor")
-                    val s3Key = presigned.s3Key ?: throw Exception("s3_key no provista por el servidor")
-
-                    // 2. Subida binaria directa a AWS S3
-                    _state.update { it.copy(uploadProgress = 0.5f) }
-                    val uploadRes = apiClient.uploadToS3(s3Url, bytes) { p ->
-                        _state.update { it.copy(uploadProgress = 0.5f + p * 0.4f) }
-                    }
-
-                    if (uploadRes.isFailure) {
-                        throw uploadRes.exceptionOrNull() ?: Exception("Error al subir archivo a almacenamiento")
-                    }
-
-                    // 3. Confirmar subida en Momentia (idéntico al frontend web)
-                    val confirmRes = apiClient.confirmUpload(
-                        token = token,
-                        eventId = eventId,
-                        fileId = presigned.fileId,
-                        s3Key = s3Key,
-                        filename = fileName,
-                        clientHash = presigned.clientHash
-                    )
-
-                    if (confirmRes.isFailure) {
-                        throw confirmRes.exceptionOrNull() ?: Exception("Error confirmando subida")
-                    }
-
-                    Log.i(TAG, "Foto $fileName subida exitosamente a Momentia")
-                    _state.update {
-                        it.copy(
-                            isUploading = false,
-                            currentUploadingFile = null,
-                            uploadProgress = 1.0f,
-                            uploadedCount = it.uploadedCount + 1,
-                            lastError = null
-                        )
-                    }
-                    onPhotoUploadFinished?.invoke(fileName, true)
-
-                    // Pausa de cortesía para no saturar conexiones ni disparar límites
-                    delay(600)
-                } catch (t: Throwable) {
-                    Log.e(TAG, "Error en subida de $fileName a Momentia: ${t.message}", t)
-                    _state.update {
-                        it.copy(
-                            isUploading = false,
-                            currentUploadingFile = null,
-                            failedCount = it.failedCount + 1,
-                            lastError = t.message
-                        )
-                    }
-                    onPhotoUploadFinished?.invoke(fileName, false)
-                    delay(1000)
                 }
             }
         }
