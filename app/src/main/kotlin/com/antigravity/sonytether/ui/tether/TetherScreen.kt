@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.size
@@ -63,6 +64,8 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.WbSunny
 import com.antigravity.sonytether.lumepic.LumepicAlbum
 import com.antigravity.sonytether.lumepic.LumepicUploadState
+import com.antigravity.sonytether.updater.AppUpdateState
+import com.antigravity.sonytether.updater.UpdateInfo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -148,6 +151,7 @@ fun TetherScreen(
     val garminHeartbeatMinutes by viewModel.garminHeartbeatMinutes.collectAsStateWithLifecycle()
     val isComparingOriginal by viewModel.isComparingOriginal.collectAsStateWithLifecycle()
     val isBwCopyEnabled by viewModel.isBwCopyEnabled.collectAsStateWithLifecycle()
+    val updateState by viewModel.updateState.collectAsStateWithLifecycle()
 
     var isEditingPreset by rememberSaveable { mutableStateOf(false) }
     var showMomentiaDialog by remember { mutableStateOf(false) }
@@ -396,6 +400,9 @@ fun TetherScreen(
             onDeleteEvent = { viewModel.deleteEventPhotos(it) },
             onClearHistory = { viewModel.clearDownloadedHistory() },
             logs = logs,
+            currentVersionName = viewModel.currentVersionName,
+            updateState = updateState,
+            onCheckUpdatesClick = { viewModel.checkForUpdates(silent = false) },
             onExitAppClick = { showExitConfirmDialog = true },
             onDismiss = { showEventSettings = false }
         )
@@ -478,6 +485,18 @@ fun TetherScreen(
                 viewModel.shutdownAndExit(context)
             },
             onDismiss = { showExitConfirmDialog = false }
+        )
+    }
+
+    // DIÁLOGO DE ACTUALIZACIÓN DISPONIBLE (GITHUB RELEASES)
+    updateState.availableUpdate?.let { updateInfo ->
+        AppUpdateDialog(
+            update = updateInfo,
+            isDownloading = updateState.isDownloading,
+            downloadProgress = updateState.downloadProgress,
+            error = updateState.error,
+            onUpdateClick = { viewModel.downloadAndInstallUpdate(updateInfo) },
+            onDismiss = { viewModel.dismissUpdate() }
         )
     }
 }
@@ -1062,6 +1081,9 @@ private fun EventSettingsDialog(
     onDeleteEvent: (String) -> Unit,
     onClearHistory: () -> Unit,
     logs: List<String>,
+    currentVersionName: String,
+    updateState: AppUpdateState,
+    onCheckUpdatesClick: () -> Unit,
     onExitAppClick: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1183,6 +1205,69 @@ private fun EventSettingsDialog(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
+                // SECCIÓN ACTUALIZACIONES DE LA APP (GITHUB RELEASES)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Actualizaciones de la App", fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "Versión instalada: v$currentVersionName",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Button(
+                                onClick = onCheckUpdatesClick,
+                                enabled = !updateState.isChecking,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                            ) {
+                                if (updateState.isChecking) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        color = Color.White,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Buscar")
+                                }
+                            }
+                        }
+
+                        if (!updateState.checkMessage.isNullOrBlank()) {
+                            Text(
+                                text = updateState.checkMessage.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF4CAF50),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        if (!updateState.error.isNullOrBlank()) {
+                            Text(
+                                text = updateState.error.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
                 // SECCIÓN CERRAR APP Y DETENER TETHER
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -1283,6 +1368,105 @@ private fun ExitConfirmDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancelar")
+            }
+        }
+    )
+}
+
+/**
+ * Diálogo de Notificación de Actualización desde GitHub Releases
+ */
+@Composable
+private fun AppUpdateDialog(
+    update: UpdateInfo,
+    isDownloading: Boolean,
+    downloadProgress: Float,
+    error: String?,
+    onUpdateClick: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isDownloading) onDismiss() },
+        icon = {
+            Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(36.dp))
+        },
+        title = {
+            Text("¡Nueva Versión Disponible!", fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "${update.releaseTitle} (${update.tagName})",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF4CAF50)
+                )
+
+                if (update.releaseNotes.isNotBlank()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 180.dp)
+                                .verticalScroll(rememberScrollState())
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                text = update.releaseNotes,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                if (isDownloading) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Descargando actualización... ${(downloadProgress * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        LinearProgressIndicator(
+                            progress = { downloadProgress },
+                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                            color = Color(0xFF4CAF50)
+                        )
+                    }
+                }
+
+                if (error != null) {
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onUpdateClick,
+                enabled = !isDownloading,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+            ) {
+                if (isDownloading) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Descargando...", color = Color.White)
+                } else {
+                    Text("Actualizar Ahora", color = Color.White)
+                }
+            }
+        },
+        dismissButton = {
+            if (!isDownloading) {
+                TextButton(onClick = onDismiss) {
+                    Text("Más tarde")
+                }
             }
         }
     )

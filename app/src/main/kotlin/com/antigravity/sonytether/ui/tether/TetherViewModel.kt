@@ -10,6 +10,9 @@ import com.antigravity.sonytether.model.CameraConnectionState
 import com.antigravity.sonytether.model.TetheredPhoto
 import com.antigravity.sonytether.momentia.MomentiaEvent
 import com.antigravity.sonytether.momentia.MomentiaUploadState
+import com.antigravity.sonytether.updater.AppUpdateState
+import com.antigravity.sonytether.updater.UpdateInfo
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +41,8 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
     val garminHeartbeatMinutes: StateFlow<Int> = engine.garminHeartbeatMinutes
     val isComparingOriginal: StateFlow<Boolean> = engine.isComparingOriginal
     val isBwCopyEnabled: StateFlow<Boolean> = engine.isBwCopyEnabled
+    val updateState: StateFlow<AppUpdateState> = engine.updateManager.state
+    val currentVersionName: String get() = engine.updateManager.currentVersionName
 
     fun setBwCopyEnabled(enabled: Boolean) {
         engine.setBwCopyEnabled(enabled)
@@ -152,6 +157,23 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
     // Modo de cierre total de la app y servicio
     fun shutdownAndExit(context: android.content.Context) {
         engine.shutdownAndExit(context)
+    }
+
+    // Actualizaciones automáticas desde GitHub Releases
+    fun checkForUpdates(silent: Boolean = false) {
+        viewModelScope.launch {
+            engine.updateManager.checkForUpdates(silent)
+        }
+    }
+
+    fun downloadAndInstallUpdate(updateInfo: UpdateInfo) {
+        viewModelScope.launch {
+            engine.updateManager.downloadAndInstall(updateInfo)
+        }
+    }
+
+    fun dismissUpdate() {
+        engine.updateManager.dismissUpdate()
     }
 
     override fun onCleared() {

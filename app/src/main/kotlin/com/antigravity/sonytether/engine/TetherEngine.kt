@@ -12,6 +12,7 @@ import android.util.Log
 import com.antigravity.sonytether.editor.ImagePresetProcessor
 import com.antigravity.sonytether.editor.PresetConfig
 import com.antigravity.sonytether.lumepic.LumepicManager
+import com.antigravity.sonytether.updater.AppUpdateManager
 import com.antigravity.sonytether.model.CameraConnectionState
 import com.antigravity.sonytether.model.DownloadStatus
 import com.antigravity.sonytether.model.TetheredPhoto
@@ -66,6 +67,7 @@ class TetherEngine(private val context: Context) {
     val storageManager = PhotoStorageManager(context)
     val momentiaManager = MomentiaManager(context)
     val lumepicManager = LumepicManager(context)
+    val updateManager = AppUpdateManager(context)
     val usbMtpHelper = SonyUsbMtpHelper(context) { usbDevice ->
         addLog("⚡ Cámara Sony conectada por USB (${usbDevice.productName ?: "ILCE-6400"}). Iniciando sesión USB...")
         startUsbTethering()
@@ -201,6 +203,13 @@ class TetherEngine(private val context: Context) {
         addLog("Iniciando recepción USB directa (Evento: $savedEvent)...")
         usbMtpHelper.startMonitoring()
         startUsbTethering()
+
+        scope.launch {
+            try {
+                delay(3000)
+                updateManager.checkForUpdates(silent = true)
+            } catch (_: Exception) {}
+        }
     }
 
     fun shutdownAndExit(context: Context) {
