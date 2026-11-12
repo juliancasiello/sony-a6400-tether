@@ -195,6 +195,15 @@ class TetherForegroundService : Service() {
             }
         }
 
+        // Monitoreo de nuevas ventas en tiempo real para Garmin y Celular
+        serviceScope.launch {
+            engine.onNewMomentiaSale.collect { sale ->
+                val title = "🎉 ¡Venta Momentia! $${sale.photographerEarnings.toInt()} ${sale.currency}"
+                val msg = "Se vendieron ${sale.photosCount} foto(s) en ${sale.eventName ?: "el evento actual"}."
+                sendSaleAlert(title, msg)
+            }
+        }
+
         serviceScope.launch {
             engine.latestPhoto.collectLatest {
                 updateOngoingNotification()
@@ -385,6 +394,33 @@ class TetherForegroundService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         manager?.notify(NOTIFICATION_ID_ALERT, notification)
         Log.w(TAG, "Alerta emitida: $title - $message")
+    }
+
+    private fun sendSaleAlert(title: String, message: String) {
+        val tapIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 101, tapIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_GARMIN_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setVibrate(longArrayOf(0, 200, 100, 200, 100, 400))
+            .setAutoCancel(true)
+            .build()
+
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.notify(2001 + (System.currentTimeMillis() % 100).toInt(), notification)
+        Log.i(TAG, "Alerta de venta emitida a Smartwatch y Celular: $title")
     }
 
     override fun onDestroy() {

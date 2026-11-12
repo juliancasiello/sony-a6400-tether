@@ -262,4 +262,77 @@ class MomentiaApiClient(
             Result.failure(e)
         }
     }
+
+    /**
+     * Consulta las ventas de fotos en Momentia (opcionalmente filtradas por evento).
+     */
+    suspend fun getSales(
+        token: String,
+        eventId: String? = null,
+        page: Int = 1,
+        limit: Int = 20
+    ): Result<MomentiaSalesSummary> = withContext(Dispatchers.IO) {
+        try {
+            val urlBuilder = StringBuilder("$BASE_URL/photographer/sales?page=$page&limit=$limit")
+            if (!eventId.isNullOrBlank() && eventId != "all") {
+                urlBuilder.append("&event_id=$eventId")
+            }
+
+            val req = Request.Builder()
+                .url(urlBuilder.toString())
+                .get()
+                .withStandardBrowserHeaders(token)
+                .build()
+
+            val response = client.newCall(req).execute()
+            val respStr = response.body?.string().orEmpty()
+
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(Exception("Error HTTP ${response.code} consultando ventas"))
+            }
+
+            val json = JSONObject(respStr)
+            val total = json.optInt("total", 0)
+            val totalPhotos = json.optInt("total_photos", 0)
+            val totalEarnings = json.optDouble("total_earnings", 0.0)
+            val currency = json.optString("display_currency", "ARS")
+
+            val ordersArray = json.optJSONArray("orders") ?: JSONArray()
+            val orders = mutableListOf<MomentiaSaleOrder>()
+            for (i in 0 until ordersArray.length()) {
+                val o = ordersArray.optJSONObject(i) ?: continue
+                val orderId = o.optString("order_id", o.optString("id", ""))
+                if (orderId.isNotBlank()) {
+                    orders.add(
+                        MomentiaSaleOrder(
+                            orderId = orderId,
+                            eventId = o.optString("event_id", null),
+                            eventName = o.optString("event_name", null),
+                            createdAt = o.optString("created_at", null),
+                            totalAmount = o.optDouble("total_amount", 0.0),
+                            photographerEarnings = o.optDouble("photographer_amount", o.optDouble("photographer_earnings", 0.0)),
+                            photosCount = o.optInt("photos_count", o.optInt("photo_count", 1)),
+                            thumbnailUrl = o.optString("thumbnail_url", null),
+                            currency = o.optString("currency", currency),
+                            status = o.optString("status", "PAID")
+                        )
+                    )
+                }
+            }
+
+            Result.success(
+                MomentiaSalesSummary(
+                    totalOrders = total,
+                    totalPhotos = totalPhotos,
+                    totalEarnings = totalEarnings,
+                    currency = currency,
+                    recentOrders = orders,
+                    lastCheckedTimestamp = System.currentTimeMillis()
+                )
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error consultando ventas de Momentia: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
 }

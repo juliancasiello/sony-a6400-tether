@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.WbSunny
 import com.antigravity.sonytether.lumepic.LumepicAlbum
 import com.antigravity.sonytether.lumepic.LumepicApiClient
 import com.antigravity.sonytether.lumepic.LumepicUploadState
+import com.antigravity.sonytether.momentia.MomentiaSaleOrder
 import com.antigravity.sonytether.updater.AppUpdateState
 import com.antigravity.sonytether.updater.UpdateInfo
 import androidx.compose.material3.AlertDialog
@@ -269,121 +270,140 @@ fun TetherScreen(
             )
         }
     ) { innerPadding ->
-        if (isLandscape) {
-            // ==============================================================
-            // ORIENTACIÓN HORIZONTAL (LANDSCAPE - IDEAL PARA MONTAJE EN CÁMARA)
-            // ==============================================================
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .background(Color(0xFF0F1015))
-            ) {
-                // 1. Visor principal de la foto en formato panorámico
-                Box(
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            if (isLandscape) {
+                // ==============================================================
+                // ORIENTACIÓN HORIZONTAL (LANDSCAPE - IDEAL PARA MONTAJE EN CÁMARA)
+                // ==============================================================
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
+                        .fillMaxSize()
+                        .background(Color(0xFF0F1015))
                 ) {
-                    PhotoHeroView(
-                        photo = currentDisplayPhoto,
-                        isUsbCameraConnected = isUsbCameraConnected,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+                    // 1. Visor principal de la foto en formato panorámico
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        PhotoHeroView(
+                            photo = currentDisplayPhoto,
+                            isUsbCameraConnected = isUsbCameraConnected,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
 
-                // 2. Tira vertical de miniaturas a la derecha
-                Surface(
-                    modifier = Modifier
-                        .width(100.dp)
-                        .fillMaxHeight(),
-                    color = Color(0xFF161822)
-                ) {
-                    if (photos.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "Sin fotos",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.Gray,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            items(photos, key = { it.id }) { photo ->
-                                val isSelected = currentDisplayPhoto?.id == photo.id
-                                ThumbnailCard(
-                                    photo = photo,
-                                    isSelected = isSelected,
-                                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-                                    onClick = { viewModel.selectPhoto(photo) }
+                    // 2. Tira vertical de miniaturas a la derecha
+                    Surface(
+                        modifier = Modifier
+                            .width(100.dp)
+                            .fillMaxHeight(),
+                        color = Color(0xFF161822)
+                    ) {
+                        if (photos.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "Sin fotos",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.Gray,
+                                    textAlign = TextAlign.Center
                                 )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                items(photos, key = { it.id }) { photo ->
+                                    val isSelected = currentDisplayPhoto?.id == photo.id
+                                    ThumbnailCard(
+                                        photo = photo,
+                                        isSelected = isSelected,
+                                        modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                                        onClick = { viewModel.selectPhoto(photo) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // ==============================================================
+                // ORIENTACIÓN VERTICAL (PORTRAIT)
+                // ==============================================================
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF0F1015))
+                ) {
+                    // 1. Visor principal de la foto en la parte superior
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        PhotoHeroView(
+                            photo = currentDisplayPhoto,
+                            isUsbCameraConnected = isUsbCameraConnected,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    // 2. Tira horizontal de miniaturas inferior
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(96.dp),
+                        color = Color(0xFF161822)
+                    ) {
+                        if (photos.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "Aún no hay fotos en este evento",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.Gray
+                                )
+                            }
+                        } else {
+                            LazyRow(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                items(photos, key = { it.id }) { photo ->
+                                    val isSelected = currentDisplayPhoto?.id == photo.id
+                                    ThumbnailCard(
+                                        photo = photo,
+                                        isSelected = isSelected,
+                                        modifier = Modifier.fillMaxHeight().aspectRatio(1f),
+                                        onClick = { viewModel.selectPhoto(photo) }
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
-        } else {
-            // ==============================================================
-            // ORIENTACIÓN VERTICAL (PORTRAIT)
-            // ==============================================================
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .background(Color(0xFF0F1015))
-            ) {
-                // 1. Visor principal de la foto en la parte superior
+
+            // Banner flotante de nueva venta en Momentia
+            momentiaState.latestSaleAlert?.let { sale ->
                 Box(
                     modifier = Modifier
-                        .weight(1f)
                         .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
                 ) {
-                    PhotoHeroView(
-                        photo = currentDisplayPhoto,
-                        isUsbCameraConnected = isUsbCameraConnected,
-                        modifier = Modifier.fillMaxSize()
+                    SaleCelebrationBanner(
+                        sale = sale,
+                        onDismiss = { viewModel.dismissMomentiaSaleAlert() }
                     )
-                }
-
-                // 2. Tira horizontal de miniaturas inferior
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(96.dp),
-                    color = Color(0xFF161822)
-                ) {
-                    if (photos.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "Aún no hay fotos en este evento",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray
-                            )
-                        }
-                    } else {
-                        LazyRow(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            items(photos, key = { it.id }) { photo ->
-                                val isSelected = currentDisplayPhoto?.id == photo.id
-                                ThumbnailCard(
-                                    photo = photo,
-                                    isSelected = isSelected,
-                                    modifier = Modifier.fillMaxHeight().aspectRatio(1f),
-                                    onClick = { viewModel.selectPhoto(photo) }
-                                )
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -424,6 +444,8 @@ fun TetherScreen(
             onSelectAlbumClick = { showMomentiaAlbumPicker = true },
             onToggleAutoUpload = { viewModel.setMomentiaAutoUpload(it) },
             onRefreshAlbums = { viewModel.refreshMomentiaEvents() },
+            onRefreshSales = { viewModel.checkMomentiaSales(silent = false) },
+            onToggleSalesMonitoring = { viewModel.setMomentiaSalesMonitoring(it) },
             onRetryFailed = { viewModel.retryMomentiaFailedUploads() },
             onDismiss = { showMomentiaDialog = false }
         )
@@ -646,8 +668,9 @@ private fun MomentiaStatusPill(
                     modifier = Modifier.size(15.dp)
                 )
                 val queueText = if (state.queueSize > 0) " (⏳${state.queueSize})" else ""
+                val salesBadge = if (state.salesSummary.totalOrders > 0) " 💰${state.salesSummary.totalOrders}" else ""
                 Text(
-                    text = "${state.uploadedCount} subidas$queueText",
+                    text = "${state.uploadedCount} subidas$queueText$salesBadge",
                     style = MaterialTheme.typography.labelSmall,
                     color = contentColor,
                     fontWeight = FontWeight.Bold
@@ -968,6 +991,8 @@ private fun MomentiaStatusDialog(
     onSelectAlbumClick: () -> Unit,
     onToggleAutoUpload: (Boolean) -> Unit,
     onRefreshAlbums: () -> Unit,
+    onRefreshSales: () -> Unit,
+    onToggleSalesMonitoring: (Boolean) -> Unit,
     onRetryFailed: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -982,7 +1007,12 @@ private fun MomentiaStatusDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 if (state.isLoggedIn) {
                     Text(
                         text = "Conectado como: ${state.userName ?: state.userEmail}",
@@ -1009,6 +1039,93 @@ private fun MomentiaStatusDialog(
                                 }
                                 IconButton(onClick = onRefreshAlbums) {
                                     Icon(Icons.Default.Refresh, contentDescription = "Actualizar")
+                                }
+                            }
+                        }
+                    }
+
+                    // Card de Ventas en Tiempo Real (Monitoreo de Evento)
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF201738)),
+                        border = BorderStroke(1.dp, Color(0xFF7C5CFC).copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFFFD54F), modifier = Modifier.size(17.dp))
+                                    Text("Ventas en Tiempo Real", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall, color = Color(0xFFFFD54F))
+                                }
+                                IconButton(onClick = onRefreshSales, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Actualizar ventas", tint = Color.LightGray, modifier = Modifier.size(16.dp))
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceAround
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${state.salesSummary.totalOrders}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = Color.White)
+                                    Text("Órdenes", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${state.salesSummary.totalPhotos}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = Color.White)
+                                    Text("Fotos", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("$${state.salesSummary.totalEarnings.toInt()}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = Color(0xFF81C784))
+                                    Text("Ganancia (${state.salesSummary.currency})", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                }
+                            }
+
+                            // Switch de monitoreo continuo
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Avisar ventas (reloj y celular)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                    Text("Chequea automáticamente cada 45s", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                }
+                                Switch(
+                                    checked = state.salesSummary.isMonitoring,
+                                    onCheckedChange = onToggleSalesMonitoring
+                                )
+                            }
+
+                            // Si hay ventas recientes
+                            if (state.salesSummary.recentOrders.isNotEmpty()) {
+                                Text("Últimas compras registradas:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = Color(0xFFFFD54F))
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    state.salesSummary.recentOrders.take(3).forEach { order ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color.Black.copy(alpha = 0.25f), RoundedCornerShape(6.dp))
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${order.photosCount} foto(s)",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Color.White
+                                            )
+                                            Text(
+                                                text = "+$${order.photographerEarnings.toInt()} ${order.currency}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF81C784)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2142,4 +2259,50 @@ private fun MomentiaAlbumPickerDialog(
             }
         }
     )
+}
+
+/**
+ * Banner flotante de celebración cuando se detecta una venta en vivo
+ */
+@Composable
+private fun SaleCelebrationBanner(
+    sale: MomentiaSaleOrder,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .clickable(onClick = onDismiss),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF26193E)),
+        border = BorderStroke(1.5.dp, Color(0xFFFFD54F))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("🎉", fontSize = 24.sp)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "¡Nueva Venta en Momentia!",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFFD54F),
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = "${sale.photosCount} foto(s) vendida(s) · Ganaste $${sale.photographerEarnings.toInt()} ${sale.currency}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = Color.LightGray, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
 }

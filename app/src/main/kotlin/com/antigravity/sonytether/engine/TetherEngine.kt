@@ -68,6 +68,8 @@ class TetherEngine(private val context: Context) {
     val momentiaManager = MomentiaManager(context)
     val lumepicManager = LumepicManager(context)
     val updateManager = AppUpdateManager(context)
+
+    val onNewMomentiaSale = kotlinx.coroutines.flow.MutableSharedFlow<com.antigravity.sonytether.momentia.MomentiaSaleOrder>(extraBufferCapacity = 10)
     val usbMtpHelper = SonyUsbMtpHelper(context) { usbDevice ->
         addLog("⚡ Cámara Sony conectada por USB (${usbDevice.productName ?: "ILCE-6400"}). Iniciando sesión USB...")
         startUsbTethering()
@@ -207,6 +209,11 @@ class TetherEngine(private val context: Context) {
         momentiaManager.isWifiConnectedProvider = { isWifiConnected() }
         lumepicManager.isWifiOnlyProvider = { _isWifiOnlyUpload.value }
         lumepicManager.isWifiConnectedProvider = { isWifiConnected() }
+
+        momentiaManager.onNewSaleDetected = { sale ->
+            addLog("💰 ¡VENTA EN MOMENTIA! ${sale.photosCount} foto(s) - $${sale.photographerEarnings.toInt()} ${sale.currency}")
+            onNewMomentiaSale.tryEmit(sale)
+        }
 
         momentiaManager.onPhotoUploadFinished = { fileName, success ->
             _photos.update { list ->

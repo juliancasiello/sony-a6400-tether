@@ -142,6 +142,18 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
         engine.momentiaManager.retryFailedUploads()
     }
 
+    fun checkMomentiaSales(silent: Boolean = false) {
+        engine.momentiaManager.checkSales(silent)
+    }
+
+    fun setMomentiaSalesMonitoring(enabled: Boolean) {
+        engine.momentiaManager.setSalesMonitoringEnabled(enabled)
+    }
+
+    fun dismissMomentiaSaleAlert() {
+        engine.momentiaManager.dismissSaleAlert()
+    }
+
     // Métodos de Lumepic
     fun setLumepicCookies(cookies: String, userName: String? = null) {
         engine.lumepicManager.setCookies(cookies, userName)

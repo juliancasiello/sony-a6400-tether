@@ -42,6 +42,10 @@ class MomentiaManager(
     private val uploadQueue = Channel<UploadItem>(Channel.UNLIMITED)
     private val failedItems = java.util.Collections.synchronizedList(mutableListOf<UploadItem>())
 
+    private var salesPollingJob: kotlinx.coroutines.Job? = null
+    var onNewSaleDetected: ((MomentiaSaleOrder) -> Unit)? = null
+    private val knownOrderIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     var isWifiOnlyProvider: () -> Boolean = { false }
     var isWifiConnectedProvider: () -> Boolean = { true }
 
@@ -59,6 +63,7 @@ class MomentiaManager(
         val eventId = prefs.getString(KEY_EVENT_ID, null)
         val eventName = prefs.getString(KEY_EVENT_NAME, null)
         val autoUpload = prefs.getBoolean(KEY_AUTO_UPLOAD, false)
+        val monitorSales = prefs.getBoolean("monitor_sales", true)
 
         val isLoggedIn = !token.isNullOrBlank()
 
@@ -70,12 +75,16 @@ class MomentiaManager(
                 userName = name,
                 selectedEventId = eventId,
                 selectedEventName = eventName,
-                isAutoUploadEnabled = autoUpload
+                isAutoUploadEnabled = autoUpload,
+                salesSummary = it.salesSummary.copy(isMonitoring = monitorSales)
             )
         }
 
         if (isLoggedIn) {
             refreshEvents()
+            if (monitorSales) {
+                startSalesMonitoring()
+            }
         }
     }
 
@@ -101,6 +110,9 @@ class MomentiaManager(
                 }
 
                 refreshEvents()
+                if (_state.value.salesSummary.isMonitoring) {
+                    startSalesMonitoring()
+                }
                 onResult(true, null)
             } else {
                 val msg = res.exceptionOrNull()?.message ?: "Error desconocido"
@@ -111,6 +123,11 @@ class MomentiaManager(
     }
 
     fun logout() {
+        salesPollingJob?.cancel()
+        salesPollingJob = null
+        synchronized(knownOrderIds) {
+            knownOrderIds.clear()
+        }
         prefs.edit().clear().apply()
         _state.update {
             MomentiaUploadState()
@@ -145,12 +162,81 @@ class MomentiaManager(
             .putString(KEY_EVENT_NAME, event.name)
             .apply()
 
+        synchronized(knownOrderIds) {
+            knownOrderIds.clear()
+        }
+
         _state.update {
             it.copy(
                 selectedEventId = event.id,
                 selectedEventName = event.name
             )
         }
+
+        checkSales(silent = true)
+    }
+
+    fun setSalesMonitoringEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("monitor_sales", enabled).apply()
+        _state.update { it.copy(salesSummary = it.salesSummary.copy(isMonitoring = enabled)) }
+        if (enabled) {
+            startSalesMonitoring()
+        } else {
+            salesPollingJob?.cancel()
+            salesPollingJob = null
+        }
+    }
+
+    fun startSalesMonitoring(intervalSeconds: Long = 45) {
+        salesPollingJob?.cancel()
+        salesPollingJob = scope.launch {
+            while (true) {
+                val token = _state.value.token
+                if (!token.isNullOrBlank() && _state.value.salesSummary.isMonitoring) {
+                    checkSales(silent = true)
+                }
+                delay(intervalSeconds * 1000L)
+            }
+        }
+    }
+
+    fun checkSales(silent: Boolean = false) {
+        val token = _state.value.token ?: return
+        val eventId = _state.value.selectedEventId
+        scope.launch {
+            val res = apiClient.getSales(token = token, eventId = eventId)
+            if (res.isSuccess) {
+                val summary = res.getOrThrow()
+                val currentKnown = synchronized(knownOrderIds) { knownOrderIds.toSet() }
+
+                // Si ya teníamos órdenes previas y aparecen nuevas, disparar alerta
+                if (currentKnown.isNotEmpty()) {
+                    val newOrders = summary.recentOrders.filter { it.orderId !in currentKnown }
+                    for (newOrder in newOrders) {
+                        Log.i(TAG, "🎉 ¡NUEVA VENTA DETECTADA EN MOMENTIA! ID=${newOrder.orderId}, Ganancia=${newOrder.photographerEarnings} ${newOrder.currency}")
+                        _state.update { it.copy(latestSaleAlert = newOrder) }
+                        onNewSaleDetected?.invoke(newOrder)
+                    }
+                }
+
+                synchronized(knownOrderIds) {
+                    summary.recentOrders.forEach { knownOrderIds.add(it.orderId) }
+                }
+
+                _state.update {
+                    it.copy(
+                        salesSummary = summary.copy(isMonitoring = it.salesSummary.isMonitoring)
+                    )
+                }
+            } else if (!silent) {
+                val err = res.exceptionOrNull()?.message ?: "Error consultando ventas"
+                Log.w(TAG, "Error consultando ventas: $err")
+            }
+        }
+    }
+
+    fun dismissSaleAlert() {
+        _state.update { it.copy(latestSaleAlert = null) }
     }
 
     fun setAutoUploadEnabled(enabled: Boolean) {
