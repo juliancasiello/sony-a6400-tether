@@ -38,10 +38,35 @@ class LumepicApiClient(
         timeZone = TimeZone.getTimeZone("UTC")
     }
 
-    private fun Request.Builder.withLumepicHeaders(cookies: String?): Request.Builder {
+    companion object {
+        fun extractCookie(cookies: String?, name: String): String? {
+            if (cookies.isNullOrBlank()) return null
+            val parts = cookies.split(";")
+            for (part in parts) {
+                val trimmed = part.trim()
+                val eq = trimmed.indexOf('=')
+                if (eq > 0) {
+                    val k = trimmed.substring(0, eq).trim()
+                    val v = trimmed.substring(eq + 1).trim()
+                    if (k.equals(name, ignoreCase = true)) {
+                        return try {
+                            java.net.URLDecoder.decode(v, "UTF-8")
+                        } catch (_: Exception) {
+                            v
+                        }
+                    }
+                }
+            }
+            return null
+        }
+    }
+
+    private fun Request.Builder.withLumepicHeaders(cookies: String?, isWrite: Boolean = false): Request.Builder {
         header("User-Agent", BROWSER_USER_AGENT)
         header("Accept", "*/*")
-        header("Origin", BASE_URL)
+        if (isWrite) {
+            header("Origin", BASE_URL)
+        }
         header("Referer", "$BASE_URL/es/albums")
         header("Sec-Ch-Ua", "\"Chromium\";v=\"128\", \"Not-A.Brand\";v=\"99\"")
         header("Sec-Ch-Ua-Mobile", "?1")
@@ -52,8 +77,23 @@ class LumepicApiClient(
         header("x-session-id", UUID.randomUUID().toString())
         header("x-correlation-id", UUID.randomUUID().toString())
         header("x-request-id", UUID.randomUUID().toString())
+
         if (!cookies.isNullOrBlank()) {
             header("Cookie", cookies)
+
+            // Lumepic requiere el encabezado Authorization Bearer con el lumepic-token
+            val token = extractCookie(cookies, "lumepic-token")
+                ?: extractCookie(cookies, "token")
+                ?: extractCookie(cookies, "session-token")
+            if (!token.isNullOrBlank()) {
+                header("Authorization", "Bearer $token")
+            }
+
+            val csrf = extractCookie(cookies, "lumepic-csrf-token")
+                ?: extractCookie(cookies, "csrf-token")
+            if (!csrf.isNullOrBlank() && isWrite) {
+                header("x-csrf-token", csrf)
+            }
         }
         return this
     }
@@ -63,11 +103,11 @@ class LumepicApiClient(
      */
     suspend fun getAlbums(cookies: String): Result<List<LumepicAlbum>> = withContext(Dispatchers.IO) {
         try {
-            val url = "$BASE_URL/api/photographer/albums?pagination%5Blimit%5D=50&pagination%5Bskip%5D=0&order%5B0%5D%5Bfield%5D=CREATED_AT&order%5B0%5D%5Bsort%5D=DESC"
+            val url = "$BASE_URL/api/photographer/albums?pagination%5Blimit%5D=20&pagination%5Bskip%5D=0&order%5B0%5D%5Bfield%5D=CREATED_AT&order%5B0%5D%5Bsort%5D=DESC"
             val req = Request.Builder()
                 .url(url)
                 .get()
-                .withLumepicHeaders(cookies)
+                .withLumepicHeaders(cookies, isWrite = false)
                 .build()
 
             val response = client.newCall(req).execute()
@@ -162,7 +202,7 @@ class LumepicApiClient(
             val req = Request.Builder()
                 .url("$BASE_URL/api/photographs/batch-create")
                 .post(bodyJson.toRequestBody(jsonMediaType))
-                .withLumepicHeaders(cookies)
+                .withLumepicHeaders(cookies, isWrite = true)
                 .build()
 
             val response = client.newCall(req).execute()
@@ -208,7 +248,7 @@ class LumepicApiClient(
             val req = Request.Builder()
                 .url("$BASE_URL/api/photographs/batch-presign")
                 .post(bodyJson.toRequestBody(jsonMediaType))
-                .withLumepicHeaders(cookies)
+                .withLumepicHeaders(cookies, isWrite = true)
                 .build()
 
             val response = client.newCall(req).execute()

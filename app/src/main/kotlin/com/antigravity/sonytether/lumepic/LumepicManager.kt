@@ -84,15 +84,36 @@ class LumepicManager(
             .putString(KEY_COOKIES, cookies)
             .apply()
 
-        if (!userName.isNullOrBlank()) {
-            prefs.edit().putString(KEY_NAME, userName).apply()
+        var resolvedName = userName
+        var resolvedEmail = _state.value.userEmail
+
+        val userJson = LumepicApiClient.extractCookie(cookies, "lumepic-user")
+        if (!userJson.isNullOrBlank()) {
+            try {
+                val obj = org.json.JSONObject(userJson)
+                val email = obj.optString("email", null)
+                val name = obj.optString("name", obj.optString("firstName", null))
+                if (!email.isNullOrBlank()) {
+                    resolvedEmail = email
+                    prefs.edit().putString(KEY_EMAIL, email).apply()
+                }
+                if (!name.isNullOrBlank()) {
+                    resolvedName = name
+                    prefs.edit().putString(KEY_NAME, name).apply()
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (!resolvedName.isNullOrBlank()) {
+            prefs.edit().putString(KEY_NAME, resolvedName).apply()
         }
 
         _state.update {
             it.copy(
                 isLoggedIn = true,
                 cookies = cookies,
-                userName = userName ?: it.userName,
+                userName = resolvedName ?: it.userName,
+                userEmail = resolvedEmail ?: it.userEmail,
                 lastError = null
             )
         }

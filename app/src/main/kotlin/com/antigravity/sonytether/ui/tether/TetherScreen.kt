@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.WbSunny
 import com.antigravity.sonytether.lumepic.LumepicAlbum
+import com.antigravity.sonytether.lumepic.LumepicApiClient
 import com.antigravity.sonytether.lumepic.LumepicUploadState
 import com.antigravity.sonytether.updater.AppUpdateState
 import com.antigravity.sonytether.updater.UpdateInfo
@@ -476,6 +477,7 @@ fun TetherScreen(
         LumepicAlbumPickerDialog(
             albums = lumepicState.availableAlbums,
             selectedAlbumId = lumepicState.selectedAlbumId,
+            lastError = lumepicState.lastError,
             onSelect = { viewModel.selectLumepicAlbum(it) },
             onDismiss = { showLumepicAlbumPicker = false }
         )
@@ -1675,6 +1677,13 @@ private fun LumepicStatusDialog(
                                     Icon(Icons.Default.Refresh, contentDescription = "Actualizar")
                                 }
                             }
+                            if (state.lastError != null) {
+                                Text(
+                                    text = "⚠️ ${state.lastError}",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                         }
                     }
 
@@ -1872,10 +1881,10 @@ private fun LumepicLoginDialog(
                                                 detectedCookies = merged
                                             }
 
-                                            // Si llegamos a /albums o hay token de sesión, autologin
+                                            // Si tenemos lumepic-token en las cookies, la sesión es válida y completa
+                                            val token = LumepicApiClient.extractCookie(merged, "lumepic-token")
                                             val cur = url.orEmpty()
-                                            val hasToken = merged.contains("lumepic") || merged.contains("session") || merged.contains("token") || merged.length > 30
-                                            if (cur.contains("lumepic.com") && (cur.contains("/albums") || cur.contains("/photographer/albums")) && hasToken) {
+                                            if (!token.isNullOrBlank() && cur.contains("lumepic.com") && (cur.contains("/albums") || cur.contains("/photographer"))) {
                                                 onLoginSuccess(merged)
                                                 onDismiss()
                                             }
@@ -1892,11 +1901,13 @@ private fun LumepicLoginDialog(
                         onClick = {
                             cookieManager.flush()
                             val cookies = detectedCookies ?: collectLumepicCookies()
-                            if (!cookies.isNullOrBlank() && (cookies.contains("lumepic") || cookies.contains("session") || cookies.contains("token") || cookies.length > 20)) {
+                            val token = LumepicApiClient.extractCookie(cookies, "lumepic-token")
+                                ?: LumepicApiClient.extractCookie(cookies, "token")
+                            if (!token.isNullOrBlank()) {
                                 onLoginSuccess(cookies)
                                 onDismiss()
                             } else {
-                                statusMessage = "Aún no se detectaron cookies de sesión activas. Iniciá sesión arriba y aguardá que cargue el panel."
+                                statusMessage = "Aún no se detectó el token de sesión ('lumepic-token'). Asegurate de completar el inicio de sesión en la pantalla web de arriba antes de continuar."
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -1966,6 +1977,7 @@ private fun LumepicLoginDialog(
 private fun LumepicAlbumPickerDialog(
     albums: List<LumepicAlbum>,
     selectedAlbumId: String?,
+    lastError: String? = null,
     onSelect: (LumepicAlbum) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1974,7 +1986,25 @@ private fun LumepicAlbumPickerDialog(
         title = { Text("Elegir Álbum de Lumepic", fontWeight = FontWeight.Bold) },
         text = {
             if (albums.isEmpty()) {
-                Text("No se encontraron álbumes en tu cuenta de Lumepic. Tocá actualizar o creá uno en photographer.lumepic.com.", style = MaterialTheme.typography.bodyMedium)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!lastError.isNullOrBlank()) {
+                        Text(
+                            text = "Error consultando Lumepic:\n$lastError",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Si la sesión no es válida, cerrá sesión en la pastilla de Lumepic y volvé a conectarla para refrescar el token.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "No se encontraron álbumes en tu cuenta de Lumepic. Tocá actualizar o creá uno en photographer.lumepic.com.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
             } else {
                 Column(
                     modifier = Modifier
