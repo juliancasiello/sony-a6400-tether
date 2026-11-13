@@ -113,6 +113,22 @@ class TetherEngine(private val context: Context) {
     )
     val ftpServerState: StateFlow<com.antigravity.sonytether.network.FtpServerState> = ftpServer.state
 
+    val ptpIpClient = com.antigravity.sonytether.network.SonyPtpIpClient(
+        onPhotoReceived = { fileName, bytes ->
+            processWifiPhoto(fileName, bytes)
+        },
+        onLog = { addLog(it) }
+    )
+    val ptpIpState: StateFlow<com.antigravity.sonytether.network.PtpIpClientState> = ptpIpClient.state
+
+    fun connectPtpIp(cameraIp: String) {
+        ptpIpClient.connect(cameraIp)
+    }
+
+    fun disconnectPtpIp() {
+        ptpIpClient.disconnect()
+    }
+
     fun toggleFtpServer(port: Int = com.antigravity.sonytether.network.DEFAULT_FTP_PORT) {
         if (ftpServer.state.value.isRunning) {
             ftpServer.stop()
@@ -750,5 +766,6 @@ class TetherEngine(private val context: Context) {
         usbSessionJob = null
         usbMtpHelper.stopMonitoring()
         ftpServer.stop()
+        ptpIpClient.disconnect()
     }
 }

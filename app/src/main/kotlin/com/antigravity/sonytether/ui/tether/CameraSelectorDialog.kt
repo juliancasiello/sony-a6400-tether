@@ -63,13 +63,17 @@ import com.antigravity.sonytether.model.SonyCameraDatabase
 import com.antigravity.sonytether.model.SonyCameraModel
 import com.antigravity.sonytether.model.UsbConnectorType
 import com.antigravity.sonytether.network.FtpServerState
+import com.antigravity.sonytether.network.PtpIpClientState
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CameraSelectorDialog(
     currentCamera: SonyCameraModel,
     ftpState: FtpServerState,
+    ptpIpState: PtpIpClientState,
     onToggleFtpServer: () -> Unit,
+    onConnectPtpIp: (String) -> Unit,
+    onDisconnectPtpIp: () -> Unit,
     onSelectCamera: (SonyCameraModel) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -159,7 +163,10 @@ fun CameraSelectorDialog(
                     // TAB 4: MODO INALÁMBRICO (WIFI / FTP)
                     WirelessGuideContent(
                         ftpState = ftpState,
-                        onToggleFtp = onToggleFtpServer
+                        ptpIpState = ptpIpState,
+                        onToggleFtp = onToggleFtpServer,
+                        onConnectPtpIp = onConnectPtpIp,
+                        onDisconnectPtpIp = onDisconnectPtpIp
                     )
                 } else {
                     // BUSCADOR
@@ -402,7 +409,10 @@ private fun CameraCardItem(
 @Composable
 private fun WirelessGuideContent(
     ftpState: FtpServerState,
-    onToggleFtp: () -> Unit
+    ptpIpState: PtpIpClientState,
+    onToggleFtp: () -> Unit,
+    onConnectPtpIp: (String) -> Unit,
+    onDisconnectPtpIp: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -490,6 +500,94 @@ private fun WirelessGuideContent(
                             Text("📷 Cámaras: ${ftpState.connectedClientsCount}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                             Text("📥 Fotos recibidas: ${ftpState.totalReceivedCount}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                         }
+                    }
+                }
+            }
+        }
+
+        item {
+            var targetCameraIp by remember { mutableStateOf(ptpIpState.cameraIp.ifBlank { "192.168.43." }) }
+
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (ptpIpState.isConnected) Color(0xFF00C853).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, if (ptpIpState.isConnected) Color(0xFF00C853) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(
+                                        color = if (ptpIpState.isConnected) Color(0xFF00C853) else if (ptpIpState.isConnecting) Color(0xFFFF9800) else Color.Gray,
+                                        shape = CircleShape
+                                    )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (ptpIpState.isConnected) "A6700 PTP/IP CONECTADA" else "Disparo Remoto WiFi (A6700)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (ptpIpState.isConnected) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                if (ptpIpState.isConnected) {
+                                    onDisconnectPtpIp()
+                                } else {
+                                    onConnectPtpIp(targetCameraIp.trim())
+                                }
+                            },
+                            enabled = !ptpIpState.isConnecting,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (ptpIpState.isConnected) Color(0xFFD32F2F) else Color(0xFF5E35B1)
+                            )
+                        ) {
+                            Text(if (ptpIpState.isConnected) "Desconectar" else if (ptpIpState.isConnecting) "Conectando..." else "Conectar")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Para cámaras sin FTP nativo como la A6700. La cámara y el teléfono deben estar en la misma red WiFi o Hotspot.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (!ptpIpState.isConnected) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = targetCameraIp,
+                            onValueChange = { targetCameraIp = it },
+                            label = { Text("IP de la Cámara Sony (ej: 192.168.43.50)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text("📷 ${ptpIpState.cameraName ?: "Sony A6700"}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                            Text("📥 Fotos recibidas: ${ptpIpState.photosReceivedCount}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
+                    if (!ptpIpState.errorMessage.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Error: ${ptpIpState.errorMessage}",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }

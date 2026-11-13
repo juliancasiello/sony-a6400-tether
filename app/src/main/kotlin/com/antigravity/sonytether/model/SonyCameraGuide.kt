@@ -74,7 +74,13 @@ object SonyCameraDatabase {
                 "Método de conexión: [USB]."
             ),
             pcSaveDestinationTip = "En [Destino de guardado], elige [Ranura + PC] para guardar en tu tarjeta SD interna y en el celular al mismo tiempo.",
-            powerUsbTip = "Menú [Ajustes] > [Opciones USB] > [Alimentación USB]: Elige según prefieras cargar la cámara desde el teléfono o ahorrar batería del móvil."
+            powerUsbTip = "Menú [Ajustes] > [Opciones USB] > [Alimentación USB]: Elige según prefieras cargar la cámara desde el teléfono o ahorrar batería del móvil.",
+            wirelessFtpSteps = listOf(
+                "Conecta la A6700 al WiFi / Hotspot de tu teléfono.",
+                "En la A6700: [MENU] > [Red] > [Conexión/PC Remote] > [Disparo remoto] > [Activado].",
+                "Método de conexión: [Wi-Fi].",
+                "En la app, pestaña '📡 Modo WiFi', ingresa la IP de la A6700 y toca 'Conectar PTP/IP'."
+            )
         ),
         SonyCameraModel(
             id = "a6600",

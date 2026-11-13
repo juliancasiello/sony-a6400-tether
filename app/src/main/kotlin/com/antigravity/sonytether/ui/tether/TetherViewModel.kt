@@ -46,9 +46,18 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
     val updateState: StateFlow<AppUpdateState> = engine.updateManager.state
     val currentVersionName: String get() = engine.updateManager.currentVersionName
     val ftpServerState: StateFlow<com.antigravity.sonytether.network.FtpServerState> = engine.ftpServerState
+    val ptpIpState: StateFlow<com.antigravity.sonytether.network.PtpIpClientState> = engine.ptpIpState
 
     fun toggleFtpServer(port: Int = com.antigravity.sonytether.network.DEFAULT_FTP_PORT) {
         engine.toggleFtpServer(port)
+    }
+
+    fun connectPtpIp(cameraIp: String) {
+        engine.connectPtpIp(cameraIp)
+    }
+
+    fun disconnectPtpIp() {
+        engine.disconnectPtpIp()
     }
 
     fun setBwCopyEnabled(enabled: Boolean) {

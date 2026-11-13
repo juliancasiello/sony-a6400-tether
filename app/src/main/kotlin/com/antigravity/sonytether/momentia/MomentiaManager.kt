@@ -57,15 +57,36 @@ class MomentiaManager(
     }
 
     private fun loadSavedState() {
-        val token = prefs.getString(KEY_TOKEN, null)
-        val email = prefs.getString(KEY_EMAIL, null)
-        val name = prefs.getString(KEY_NAME, null)
-        val eventId = prefs.getString(KEY_EVENT_ID, null)
-        val eventName = prefs.getString(KEY_EVENT_NAME, null)
+        var token = prefs.getString(KEY_TOKEN, null)
+        var email = prefs.getString(KEY_EMAIL, null)
+        var pass = prefs.getString("saved_password", null)
+        var name = prefs.getString(KEY_NAME, null)
+        var eventId = prefs.getString(KEY_EVENT_ID, null)
+        var eventName = prefs.getString(KEY_EVENT_NAME, null)
         val autoUpload = prefs.getBoolean(KEY_AUTO_UPLOAD, false)
         val monitorSales = prefs.getBoolean("monitor_sales", true)
 
-        val isLoggedIn = !token.isNullOrBlank()
+        // Si SharedPreferences está vacío (ej: tras actualizar o reinstalar), restaurar desde la bóveda de respaldo
+        if (token.isNullOrBlank() && email.isNullOrBlank()) {
+            val vault = com.antigravity.sonytether.storage.SessionVaultManager.loadVault(context)
+            if (vault != null && (!vault.momentiaEmail.isNullOrBlank() || !vault.momentiaToken.isNullOrBlank())) {
+                email = vault.momentiaEmail
+                pass = vault.momentiaPassword
+                token = vault.momentiaToken
+                eventId = vault.momentiaEventId
+                eventName = vault.momentiaEventName
+                prefs.edit()
+                    .putString(KEY_TOKEN, token)
+                    .putString(KEY_EMAIL, email)
+                    .putString("saved_password", pass)
+                    .putString(KEY_EVENT_ID, eventId)
+                    .putString(KEY_EVENT_NAME, eventName)
+                    .apply()
+                Log.i(TAG, "Restauradas credenciales de Momentia desde la bóveda de respaldo")
+            }
+        }
+
+        val isLoggedIn = !token.isNullOrBlank() || (!email.isNullOrBlank() && !pass.isNullOrBlank())
 
         _state.update {
             it.copy(
@@ -80,12 +101,47 @@ class MomentiaManager(
             )
         }
 
-        if (isLoggedIn) {
+        if (!email.isNullOrBlank() && !pass.isNullOrBlank()) {
+            // Auto-relogin silencioso para asegurar que el token esté siempre vigente sin pedir login al usuario
+            scope.launch {
+                val res = apiClient.login(email, pass)
+                if (res.isSuccess) {
+                    val (newToken, user) = res.getOrThrow()
+                    prefs.edit()
+                        .putString(KEY_TOKEN, newToken)
+                        .putString(KEY_EMAIL, user.email)
+                        .putString(KEY_NAME, user.name)
+                        .apply()
+                    _state.update {
+                        it.copy(isLoggedIn = true, token = newToken, userEmail = user.email, userName = user.name)
+                    }
+                    persistToVault()
+                }
+                refreshEvents()
+                if (monitorSales) {
+                    startSalesMonitoring()
+                }
+            }
+        } else if (isLoggedIn) {
             refreshEvents()
             if (monitorSales) {
                 startSalesMonitoring()
             }
         }
+    }
+
+    private fun persistToVault() {
+        try {
+            val current = com.antigravity.sonytether.storage.SessionVaultManager.loadVault(context)
+            val updated = (current ?: com.antigravity.sonytether.storage.SessionVaultData()).copy(
+                momentiaEmail = prefs.getString(KEY_EMAIL, null),
+                momentiaPassword = prefs.getString("saved_password", null),
+                momentiaToken = _state.value.token,
+                momentiaEventId = _state.value.selectedEventId,
+                momentiaEventName = _state.value.selectedEventName
+            )
+            com.antigravity.sonytether.storage.SessionVaultManager.saveVault(context, updated)
+        } catch (_: Exception) {}
     }
 
     fun login(email: String, pass: String, onResult: (Boolean, String?) -> Unit) {
@@ -97,6 +153,7 @@ class MomentiaManager(
                     .putString(KEY_TOKEN, token)
                     .putString(KEY_EMAIL, user.email)
                     .putString(KEY_NAME, user.name)
+                    .putString("saved_password", pass)
                     .apply()
 
                 _state.update {
@@ -109,6 +166,7 @@ class MomentiaManager(
                     )
                 }
 
+                persistToVault()
                 refreshEvents()
                 if (_state.value.salesSummary.isMonitoring) {
                     startSalesMonitoring()
@@ -161,6 +219,8 @@ class MomentiaManager(
             .putString(KEY_EVENT_ID, event.id)
             .putString(KEY_EVENT_NAME, event.name)
             .apply()
+
+        persistToVault()
 
         synchronized(knownOrderIds) {
             knownOrderIds.clear()

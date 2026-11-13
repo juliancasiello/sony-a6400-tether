@@ -53,12 +53,27 @@ class LumepicManager(
     }
 
     private fun loadSavedState() {
-        val cookies = prefs.getString(KEY_COOKIES, null)
-        val name = prefs.getString(KEY_NAME, null)
-        val email = prefs.getString(KEY_EMAIL, null)
-        val albumId = prefs.getString(KEY_ALBUM_ID, null)
-        val albumName = prefs.getString(KEY_ALBUM_NAME, null)
+        var cookies = prefs.getString(KEY_COOKIES, null)
+        var name = prefs.getString(KEY_NAME, null)
+        var email = prefs.getString(KEY_EMAIL, null)
+        var albumId = prefs.getString(KEY_ALBUM_ID, null)
+        var albumName = prefs.getString(KEY_ALBUM_NAME, null)
         val autoUpload = prefs.getBoolean(KEY_AUTO_UPLOAD, false)
+
+        if (cookies.isNullOrBlank()) {
+            val vault = com.antigravity.sonytether.storage.SessionVaultManager.loadVault(context)
+            if (vault != null && !vault.lumepicCookies.isNullOrBlank()) {
+                cookies = vault.lumepicCookies
+                albumId = vault.lumepicAlbumId
+                albumName = vault.lumepicAlbumName
+                prefs.edit()
+                    .putString(KEY_COOKIES, cookies)
+                    .putString(KEY_ALBUM_ID, albumId)
+                    .putString(KEY_ALBUM_NAME, albumName)
+                    .apply()
+                android.util.Log.i("LumepicManager", "Restauradas cookies de Lumepic desde la bóveda de respaldo")
+            }
+        }
 
         val isLoggedIn = !cookies.isNullOrBlank()
 
@@ -77,6 +92,18 @@ class LumepicManager(
         if (isLoggedIn && !cookies.isNullOrBlank()) {
             refreshAlbums()
         }
+    }
+
+    private fun persistToVault() {
+        try {
+            val current = com.antigravity.sonytether.storage.SessionVaultManager.loadVault(context)
+            val updated = (current ?: com.antigravity.sonytether.storage.SessionVaultData()).copy(
+                lumepicCookies = _state.value.cookies,
+                lumepicAlbumId = _state.value.selectedAlbumId,
+                lumepicAlbumName = _state.value.selectedAlbumName
+            )
+            com.antigravity.sonytether.storage.SessionVaultManager.saveVault(context, updated)
+        } catch (_: Exception) {}
     }
 
     fun setCookies(cookies: String, userName: String? = null) {
@@ -118,6 +145,7 @@ class LumepicManager(
             )
         }
 
+        persistToVault()
         refreshAlbums()
     }
 
@@ -157,6 +185,8 @@ class LumepicManager(
             .putString(KEY_ALBUM_ID, album.id)
             .putString(KEY_ALBUM_NAME, album.description)
             .apply()
+
+        persistToVault()
 
         _state.update {
             it.copy(

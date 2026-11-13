@@ -159,6 +159,7 @@ fun TetherScreen(
     val currentCameraModel by viewModel.currentCameraModel.collectAsStateWithLifecycle()
     val showCameraSelectorDialog by viewModel.showCameraSelectorDialog.collectAsStateWithLifecycle()
     val ftpServerState by viewModel.ftpServerState.collectAsStateWithLifecycle()
+    val ptpIpState by viewModel.ptpIpState.collectAsStateWithLifecycle()
 
     var isEditingPreset by rememberSaveable { mutableStateOf(false) }
     var showMomentiaDialog by remember { mutableStateOf(false) }
@@ -591,7 +592,10 @@ fun TetherScreen(
         CameraSelectorDialog(
             currentCamera = currentCameraModel,
             ftpState = ftpServerState,
+            ptpIpState = ptpIpState,
             onToggleFtpServer = { viewModel.toggleFtpServer() },
+            onConnectPtpIp = { viewModel.connectPtpIp(it) },
+            onDisconnectPtpIp = { viewModel.disconnectPtpIp() },
             onSelectCamera = { camera ->
                 viewModel.selectCameraModel(camera.id)
             },
