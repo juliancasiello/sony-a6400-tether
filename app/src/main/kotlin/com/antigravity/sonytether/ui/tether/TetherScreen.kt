@@ -62,6 +62,7 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material.icons.filled.Wifi
 import com.antigravity.sonytether.lumepic.LumepicAlbum
 import com.antigravity.sonytether.lumepic.LumepicApiClient
 import com.antigravity.sonytether.lumepic.LumepicUploadState
@@ -157,6 +158,7 @@ fun TetherScreen(
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val currentCameraModel by viewModel.currentCameraModel.collectAsStateWithLifecycle()
     val showCameraSelectorDialog by viewModel.showCameraSelectorDialog.collectAsStateWithLifecycle()
+    val ftpServerState by viewModel.ftpServerState.collectAsStateWithLifecycle()
 
     var isEditingPreset by rememberSaveable { mutableStateOf(false) }
     var showMomentiaDialog by remember { mutableStateOf(false) }
@@ -283,6 +285,12 @@ fun TetherScreen(
                     }
                 },
                 actions = {
+                    // Pill de estado de Servidor WiFi / FTP
+                    WifiFtpStatusPill(
+                        ftpState = ftpServerState,
+                        onClick = { viewModel.toggleCameraSelectorDialog(true) }
+                    )
+
                     // Toggle rápido para subir copia en blanco y negro (+ B&N)
                     BwTogglePill(
                         isEnabled = isBwCopyEnabled,
@@ -582,6 +590,8 @@ fun TetherScreen(
     if (showCameraSelectorDialog) {
         CameraSelectorDialog(
             currentCamera = currentCameraModel,
+            ftpState = ftpServerState,
+            onToggleFtpServer = { viewModel.toggleFtpServer() },
             onSelectCamera = { camera ->
                 viewModel.selectCameraModel(camera.id)
             },
@@ -758,6 +768,51 @@ private fun MomentiaStatusPill(
                     text = "Momentia",
                     style = MaterialTheme.typography.labelSmall,
                     color = contentColor
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Píldora de estado del Servidor FTP inalámbrico en la barra superior
+ */
+@Composable
+private fun WifiFtpStatusPill(
+    ftpState: com.antigravity.sonytether.network.FtpServerState,
+    onClick: () -> Unit
+) {
+    val isRunning = ftpState.isRunning
+    Surface(
+        modifier = Modifier
+            .padding(end = 4.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        color = if (isRunning) Color(0xFF1E88E5).copy(alpha = 0.2f) else Color.DarkGray.copy(alpha = 0.35f),
+        border = if (isRunning) BorderStroke(1.dp, Color(0xFF1E88E5)) else BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Wifi,
+                contentDescription = "WiFi FTP",
+                tint = if (isRunning) Color(0xFF1E88E5) else Color.LightGray,
+                modifier = Modifier.size(13.dp)
+            )
+            Text(
+                text = if (isRunning) "FTP :${ftpState.port}" else "WiFi",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (isRunning) Color(0xFF1E88E5) else Color.LightGray
+            )
+            if (isRunning) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(Color(0xFF00C853), CircleShape)
                 )
             }
         }

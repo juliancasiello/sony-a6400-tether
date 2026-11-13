@@ -62,11 +62,14 @@ import com.antigravity.sonytether.model.CameraFamily
 import com.antigravity.sonytether.model.SonyCameraDatabase
 import com.antigravity.sonytether.model.SonyCameraModel
 import com.antigravity.sonytether.model.UsbConnectorType
+import com.antigravity.sonytether.network.FtpServerState
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CameraSelectorDialog(
     currentCamera: SonyCameraModel,
+    ftpState: FtpServerState,
+    onToggleFtpServer: () -> Unit,
     onSelectCamera: (SonyCameraModel) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -154,7 +157,10 @@ fun CameraSelectorDialog(
 
                 if (selectedTab == 4) {
                     // TAB 4: MODO INALÁMBRICO (WIFI / FTP)
-                    WirelessGuideContent()
+                    WirelessGuideContent(
+                        ftpState = ftpState,
+                        onToggleFtp = onToggleFtpServer
+                    )
                 } else {
                     // BUSCADOR
                     OutlinedTextField(
@@ -394,11 +400,101 @@ private fun CameraCardItem(
 }
 
 @Composable
-private fun WirelessGuideContent() {
+private fun WirelessGuideContent(
+    ftpState: FtpServerState,
+    onToggleFtp: () -> Unit
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        item {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (ftpState.isRunning) Color(0xFF00C853).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, if (ftpState.isRunning) Color(0xFF00C853) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(
+                                        color = if (ftpState.isRunning) Color(0xFF00C853) else Color.Gray,
+                                        shape = CircleShape
+                                    )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (ftpState.isRunning) "Servidor FTP ACTIVO" else "Servidor FTP INACTIVO",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (ftpState.isRunning) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Button(
+                            onClick = onToggleFtp,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (ftpState.isRunning) Color(0xFFD32F2F) else Color(0xFF1E88E5)
+                            )
+                        ) {
+                            Text(if (ftpState.isRunning) "Detener" else "Activar")
+                        }
+                    }
+
+                    if (ftpState.isRunning) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Configurá estos datos exactos en el menú FTP de tu Sony:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("IP Servidor (Host):", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text(ftpState.localIp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Puerto FTP:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text("${ftpState.port}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Usuario:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text(ftpState.username, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Contraseña:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text(ftpState.password, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text("📷 Cámaras: ${ftpState.connectedClientsCount}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                            Text("📥 Fotos recibidas: ${ftpState.totalReceivedCount}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E88E5).copy(alpha = 0.15f)),

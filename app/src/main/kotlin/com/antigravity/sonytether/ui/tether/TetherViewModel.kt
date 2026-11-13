@@ -45,6 +45,11 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
     val isWifiOnlyUpload: StateFlow<Boolean> = engine.isWifiOnlyUpload
     val updateState: StateFlow<AppUpdateState> = engine.updateManager.state
     val currentVersionName: String get() = engine.updateManager.currentVersionName
+    val ftpServerState: StateFlow<com.antigravity.sonytether.network.FtpServerState> = engine.ftpServerState
+
+    fun toggleFtpServer(port: Int = com.antigravity.sonytether.network.DEFAULT_FTP_PORT) {
+        engine.toggleFtpServer(port)
+    }
 
     fun setBwCopyEnabled(enabled: Boolean) {
         engine.setBwCopyEnabled(enabled)

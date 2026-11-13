@@ -104,6 +104,41 @@ class TetherEngine(private val context: Context) {
     val lumepicManager = LumepicManager(context)
     val updateManager = AppUpdateManager(context)
 
+    val ftpServer = com.antigravity.sonytether.network.SonyFtpServer(
+        context = context,
+        onPhotoReceived = { fileName, bytes ->
+            processWifiPhoto(fileName, bytes)
+        },
+        onLog = { addLog(it) }
+    )
+    val ftpServerState: StateFlow<com.antigravity.sonytether.network.FtpServerState> = ftpServer.state
+
+    fun toggleFtpServer(port: Int = com.antigravity.sonytether.network.DEFAULT_FTP_PORT) {
+        if (ftpServer.state.value.isRunning) {
+            ftpServer.stop()
+        } else {
+            ftpServer.start(port)
+        }
+    }
+
+    private fun processWifiPhoto(fileName: String, originalBytes: ByteArray) {
+        scope.launch(Dispatchers.IO) {
+            val eventName = _activeEventName.value
+            val saveRes = storageManager.saveOriginalFromBytes(
+                fileName = fileName,
+                originalBytes = originalBytes,
+                eventName = eventName,
+                recentOriginalUris = recentOriginalUris
+            )
+            if (saveRes.isSuccess) {
+                val origData = saveRes.getOrThrow()
+                handleOriginalCaptured(origData, eventName, "wifi://$fileName")
+            } else {
+                addLog("❌ Error guardando foto WiFi $fileName: ${saveRes.exceptionOrNull()?.message}")
+            }
+        }
+    }
+
     val onNewMomentiaSale = kotlinx.coroutines.flow.MutableSharedFlow<com.antigravity.sonytether.momentia.MomentiaSaleOrder>(extraBufferCapacity = 10)
     val usbMtpHelper = SonyUsbMtpHelper(context) { usbDevice ->
         val prodName = usbDevice.productName
@@ -714,5 +749,6 @@ class TetherEngine(private val context: Context) {
         usbSessionJob?.cancel()
         usbSessionJob = null
         usbMtpHelper.stopMonitoring()
+        ftpServer.stop()
     }
 }
