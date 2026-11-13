@@ -42,6 +42,8 @@ data class SavedBwResult(
 class PhotoStorageManager(private val context: Context) {
 
     companion object {
+        const val BASE_FOLDER = "SonyAlpha_Tether"
+
         fun sanitizeFolderName(name: String): String {
             return name.replace(Regex("[^a-zA-Z0-9_.-]"), "_")
         }
@@ -63,7 +65,7 @@ class PhotoStorageManager(private val context: Context) {
         val startTime = System.currentTimeMillis()
         try {
             val sanitizedEvent = sanitizeFolderName(eventName)
-            val originalRelativeFolder = "${Environment.DIRECTORY_PICTURES}/SonyA6400_Tether/$sanitizedEvent"
+            val originalRelativeFolder = "${Environment.DIRECTORY_PICTURES}/$BASE_FOLDER/$sanitizedEvent"
             val resolver = context.contentResolver
 
             val originalValues = ContentValues().apply {
@@ -171,7 +173,7 @@ class PhotoStorageManager(private val context: Context) {
             }
 
             val sanitizedEvent = sanitizeFolderName(eventName)
-            val editedRelativeFolder = "${Environment.DIRECTORY_PICTURES}/SonyA6400_Tether/$sanitizedEvent/Editadas"
+            val editedRelativeFolder = "${Environment.DIRECTORY_PICTURES}/$BASE_FOLDER/$sanitizedEvent/Editadas"
             val resolver = context.contentResolver
 
             val editedFileName = if (baseFileName.contains('.')) {
@@ -294,7 +296,7 @@ class PhotoStorageManager(private val context: Context) {
             }
 
             val sanitizedEvent = sanitizeFolderName(eventName)
-            val relativeFolder = "${Environment.DIRECTORY_PICTURES}/SonyA6400_Tether/$sanitizedEvent"
+            val relativeFolder = "${Environment.DIRECTORY_PICTURES}/$BASE_FOLDER/$sanitizedEvent"
             val resolver = context.contentResolver
 
             val bwFileName = if (baseFileName.contains('.')) {
@@ -437,8 +439,8 @@ class PhotoStorageManager(private val context: Context) {
 
         try {
             val projection = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.RELATIVE_PATH)
-            val selection = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?"
-            val selectionArgs = arrayOf("%SonyA6400_Tether/$sanitizedEvent%")
+            val selection = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ? OR ${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?"
+            val selectionArgs = arrayOf("%$BASE_FOLDER/$sanitizedEvent%", "%SonyA6400_Tether/$sanitizedEvent%")
 
             val cursor = resolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,

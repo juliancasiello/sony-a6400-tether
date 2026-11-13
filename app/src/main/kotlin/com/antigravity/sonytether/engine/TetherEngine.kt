@@ -12,6 +12,8 @@ import android.util.Log
 import com.antigravity.sonytether.editor.ImagePresetProcessor
 import com.antigravity.sonytether.editor.PresetConfig
 import com.antigravity.sonytether.lumepic.LumepicManager
+import com.antigravity.sonytether.model.SonyCameraDatabase
+import com.antigravity.sonytether.model.SonyCameraModel
 import com.antigravity.sonytether.updater.AppUpdateManager
 import com.antigravity.sonytether.model.CameraConnectionState
 import com.antigravity.sonytether.model.DownloadStatus
@@ -29,8 +31,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -63,6 +68,36 @@ class TetherEngine(private val context: Context) {
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val prefs = context.getSharedPreferences("sony_tether_presets_v2", Context.MODE_PRIVATE)
+
+    // Modelo de cámara seleccionado manualmente o detectado por hardware
+    private val _selectedCameraId = MutableStateFlow(prefs.getString("selected_camera_id", "a6400") ?: "a6400")
+    val selectedCameraId: StateFlow<String> = _selectedCameraId.asStateFlow()
+
+    private val _detectedCameraModelName = MutableStateFlow<String?>(null)
+    val detectedCameraModelName: StateFlow<String?> = _detectedCameraModelName.asStateFlow()
+
+    val currentCameraModel: StateFlow<SonyCameraModel> = combine(
+        _selectedCameraId,
+        _detectedCameraModelName
+    ) { selectedId, detected ->
+        if (detected != null) {
+            SonyCameraDatabase.matchFromProductName(detected) ?: SonyCameraDatabase.findById(selectedId)
+        } else {
+            SonyCameraDatabase.findById(selectedId)
+        }
+    }.stateIn(
+        scope,
+        SharingStarted.Eagerly,
+        SonyCameraDatabase.findById("a6400")
+    )
+
+    fun selectCameraModel(id: String) {
+        _selectedCameraId.value = id
+        prefs.edit().putString("selected_camera_id", id).apply()
+        val cam = SonyCameraDatabase.findById(id)
+        addLog("📷 Cámara seleccionada: ${cam.displayName}")
+    }
 
     val storageManager = PhotoStorageManager(context)
     val momentiaManager = MomentiaManager(context)
@@ -71,7 +106,12 @@ class TetherEngine(private val context: Context) {
 
     val onNewMomentiaSale = kotlinx.coroutines.flow.MutableSharedFlow<com.antigravity.sonytether.momentia.MomentiaSaleOrder>(extraBufferCapacity = 10)
     val usbMtpHelper = SonyUsbMtpHelper(context) { usbDevice ->
-        addLog("⚡ Cámara Sony conectada por USB (${usbDevice.productName ?: "ILCE-6400"}). Iniciando sesión USB...")
+        val prodName = usbDevice.productName
+        if (!prodName.isNullOrBlank()) {
+            _detectedCameraModelName.value = prodName
+        }
+        val camName = prodName ?: currentCameraModel.value.displayName
+        addLog("⚡ Cámara Sony conectada por USB ($camName). Iniciando sesión...")
         startUsbTethering()
     }
     val isUsbCameraConnected: StateFlow<Boolean> = usbMtpHelper.isUsbCameraConnected
@@ -152,7 +192,6 @@ class TetherEngine(private val context: Context) {
     private val recentOriginalUris = java.util.Collections.synchronizedList(mutableListOf<android.net.Uri>())
     private var usbSessionJob: Job? = null
     private val downloadedOriginalKeys = ConcurrentHashMap.newKeySet<String>()
-    private val prefs = context.getSharedPreferences("sony_tether_presets_v2", Context.MODE_PRIVATE)
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     // Buffer de la última foto tomada que está en espera de ajuste o disparo siguiente
@@ -643,8 +682,8 @@ class TetherEngine(private val context: Context) {
             .putString("active_event_name", clean)
             .putStringSet("recent_events", updatedRecent.toSet())
             .apply()
-        addLog("📁 Evento activo: Pictures/SonyA6400_Tether/$clean (Originales / Editadas)")
-        _syncStatusMessage.value = "📁 Guardando fotos en: SonyA6400_Tether/$clean"
+        addLog("📁 Evento activo: Pictures/${PhotoStorageManager.BASE_FOLDER}/$clean (Originales / Editadas)")
+        _syncStatusMessage.value = "📁 Guardando fotos en: ${PhotoStorageManager.BASE_FOLDER}/$clean"
     }
 
     fun clearDownloadedHistory() {

@@ -155,6 +155,8 @@ fun TetherScreen(
     val isBwCopyEnabled by viewModel.isBwCopyEnabled.collectAsStateWithLifecycle()
     val isWifiOnlyUpload by viewModel.isWifiOnlyUpload.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+    val currentCameraModel by viewModel.currentCameraModel.collectAsStateWithLifecycle()
+    val showCameraSelectorDialog by viewModel.showCameraSelectorDialog.collectAsStateWithLifecycle()
 
     var isEditingPreset by rememberSaveable { mutableStateOf(false) }
     var showMomentiaDialog by remember { mutableStateOf(false) }
@@ -180,13 +182,37 @@ fun TetherScreen(
         topBar = {
             TopAppBar(
                 title = {
+                    val cameraLabel = "Sony ${currentCameraModel.shortName}"
                     if (isLandscape) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Sony a6400",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.toggleCameraSelectorDialog(true) }
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CameraAlt,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = cameraLabel,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = "Cambiar cámara",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.width(6.dp))
                             Box(
                                 modifier = Modifier
@@ -208,11 +234,34 @@ fun TetherScreen(
                     } else {
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Sony a6400",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { viewModel.toggleCameraSelectorDialog(true) }
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = cameraLabel,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = "Cambiar cámara",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Box(
                                     modifier = Modifier
@@ -528,6 +577,17 @@ fun TetherScreen(
             onDismiss = { viewModel.dismissUpdate() }
         )
     }
+
+    // DIÁLOGO SELECTOR DE CÁMARA Y GUÍA DE CONEXIÓN
+    if (showCameraSelectorDialog) {
+        CameraSelectorDialog(
+            currentCamera = currentCameraModel,
+            onSelectCamera = { camera ->
+                viewModel.selectCameraModel(camera.id)
+            },
+            onDismiss = { viewModel.toggleCameraSelectorDialog(false) }
+        )
+    }
 }
 
 /**
@@ -841,7 +901,7 @@ private fun ThumbnailCard(
 
 /**
  * Visor central de la foto actual (Hero Photo)
- * Muestra la imagen fiel original directamente recibida por USB de la Sony a6400.
+ * Muestra la imagen fiel original directamente recibida por USB de la cámara Sony.
  */
 @Composable
 private fun PhotoHeroView(
@@ -967,9 +1027,9 @@ private fun PhotoHeroView(
                     )
                     Text(
                         text = if (isUsbCameraConnected)
-                            "Dispará con la Sony a6400. La foto aparecerá aquí y se subirá automáticamente a Momentia."
+                            "Dispará con tu cámara Sony. La foto aparecerá aquí en tiempo real y se subirá automáticamente a la nube."
                         else
-                            "Conectá el cable USB a la cámara en modo 'PC remoto'.",
+                            "Conectá el cable USB a la cámara en modo 'Control Remoto PC'.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray,
                         textAlign = TextAlign.Center
@@ -1186,7 +1246,7 @@ private fun MomentiaStatusDialog(
                     }
                 } else {
                     Text(
-                        "Conectá tu cuenta de Momentia para que cada disparo con la a6400 se guarde, edite y suba directamente a tu álbum.",
+                        "Conectá tu cuenta de Momentia para que cada disparo se guarde, edite y suba directamente a tu álbum.",
                         style = MaterialTheme.typography.bodyMedium
                     )
 

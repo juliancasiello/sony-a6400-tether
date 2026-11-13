@@ -3,7 +3,7 @@ package com.antigravity.sonytether.model
 import android.net.Uri
 
 /**
- * Representa una foto transferida desde la Sony a6400
+ * Representa una foto transferida desde una cámara Sony
  */
 data class TetheredPhoto(
     val id: String,
@@ -58,7 +58,7 @@ enum class TransferQuality(val apiValue: String, val label: String) {
  * Información de estado de la cámara
  */
 data class CameraStatusInfo(
-    val model: String = "Sony a6400",
+    val model: String = "Sony Alpha",
     val batteryPercentage: String? = null,
     val isCharging: Boolean = false,
     val cameraStatus: String = "Inactivo",

@@ -7,6 +7,7 @@ import com.antigravity.sonytether.engine.TetherEngine
 import com.antigravity.sonytether.lumepic.LumepicAlbum
 import com.antigravity.sonytether.lumepic.LumepicUploadState
 import com.antigravity.sonytether.model.CameraConnectionState
+import com.antigravity.sonytether.model.SonyCameraModel
 import com.antigravity.sonytether.model.TetheredPhoto
 import com.antigravity.sonytether.momentia.MomentiaEvent
 import com.antigravity.sonytether.momentia.MomentiaUploadState
@@ -77,6 +78,21 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private val _selectedPhoto = MutableStateFlow<TetheredPhoto?>(null)
+    val currentCameraModel: StateFlow<SonyCameraModel> = engine.currentCameraModel
+    val selectedCameraId: StateFlow<String> = engine.selectedCameraId
+    val detectedCameraModelName: StateFlow<String?> = engine.detectedCameraModelName
+
+    private val _showCameraSelectorDialog = MutableStateFlow(false)
+    val showCameraSelectorDialog: StateFlow<Boolean> = _showCameraSelectorDialog.asStateFlow()
+
+    fun toggleCameraSelectorDialog(show: Boolean) {
+        _showCameraSelectorDialog.value = show
+    }
+
+    fun selectCameraModel(id: String) {
+        engine.selectCameraModel(id)
+    }
+
     val selectedPhoto: StateFlow<TetheredPhoto?> = _selectedPhoto.asStateFlow()
 
     private val _showSettingsDialog = MutableStateFlow(false)

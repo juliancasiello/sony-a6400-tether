@@ -86,7 +86,7 @@ class TetherForegroundService : Service() {
         acquireWakeLock()
 
         val initialNotification = buildOngoingNotification(
-            title = "Sony a6400 Tether Activo",
+            title = "Sony Alpha Tether Activo",
             content = "Listo para disparar y transferir fotos en segundo plano"
         )
 
@@ -170,15 +170,17 @@ class TetherForegroundService : Service() {
             engine.isUsbCameraConnected.collectLatest { connected ->
                 if (wasUsbConnected != null && wasUsbConnected != connected) {
                     if (!connected) {
+                        val camName = engine.currentCameraModel.value.shortName
                         // ¡ALERTA CRÍTICA PARA GARMIN! Cable desconectado
                         sendGarminAlert(
-                            title = "⚠️ Sony a6400: Cable Desconectado",
+                            title = "⚠️ Sony $camName: Cable Desconectado",
                             message = "Se interrumpió la conexión USB con la cámara. Revisá el cable."
                         )
                     } else {
+                        val camName = engine.currentCameraModel.value.shortName
                         // Aviso de reconexión exitosa
                         sendGarminAlert(
-                            title = "⚡ Sony a6400: Conectada",
+                            title = "⚡ Sony $camName: Conectada",
                             message = "Conexión USB restablecida. Sesión de tethering activa."
                         )
                     }
@@ -293,7 +295,8 @@ class TetherForegroundService : Service() {
         val eventName = engine.activeEventName.value
         val latest = engine.latestPhoto.value
 
-        val title = if (isUsb) "📷 Sony a6400 Conectada" else "📷 Sony Tether Activo"
+        val camShort = engine.currentCameraModel.value.shortName
+        val title = if (isUsb) "📷 Sony $camShort Conectada" else "📷 Sony Alpha Tether"
         val content = buildString {
             append("📁 $eventName")
             if (momentiaState.isLoggedIn && momentiaState.isAutoUploadEnabled) {
