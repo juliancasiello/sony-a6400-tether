@@ -160,6 +160,7 @@ fun TetherScreen(
     val showCameraSelectorDialog by viewModel.showCameraSelectorDialog.collectAsStateWithLifecycle()
     val ftpServerState by viewModel.ftpServerState.collectAsStateWithLifecycle()
     val ptpIpState by viewModel.ptpIpState.collectAsStateWithLifecycle()
+    val httpPushState by viewModel.httpPushState.collectAsStateWithLifecycle()
 
     var isEditingPreset by rememberSaveable { mutableStateOf(false) }
     var showMomentiaDialog by remember { mutableStateOf(false) }
@@ -286,9 +287,10 @@ fun TetherScreen(
                     }
                 },
                 actions = {
-                    // Pill de estado de Servidor WiFi / FTP
-                    WifiFtpStatusPill(
+                    // Pill de estado de Servidor WiFi (Push HTTP / FTP)
+                    WifiStatusPill(
                         ftpState = ftpServerState,
+                        httpPushState = httpPushState,
                         onClick = { viewModel.toggleCameraSelectorDialog(true) }
                     )
 
@@ -593,9 +595,11 @@ fun TetherScreen(
             currentCamera = currentCameraModel,
             ftpState = ftpServerState,
             ptpIpState = ptpIpState,
+            httpPushState = httpPushState,
             onToggleFtpServer = { viewModel.toggleFtpServer() },
             onConnectPtpIp = { viewModel.connectPtpIp(it) },
             onDisconnectPtpIp = { viewModel.disconnectPtpIp() },
+            onToggleHttpPushServer = { viewModel.toggleHttpPushServer() },
             onSelectCamera = { camera ->
                 viewModel.selectCameraModel(camera.id)
             },
@@ -779,21 +783,32 @@ private fun MomentiaStatusPill(
 }
 
 /**
- * Píldora de estado del Servidor FTP inalámbrico en la barra superior
+ * Píldora de estado del Servidor WiFi (Push HTTP / FTP) inalámbrico en la barra superior
  */
 @Composable
-private fun WifiFtpStatusPill(
+private fun WifiStatusPill(
     ftpState: com.antigravity.sonytether.network.FtpServerState,
+    httpPushState: com.antigravity.sonytether.network.HttpPushServerState,
     onClick: () -> Unit
 ) {
-    val isRunning = ftpState.isRunning
+    val isPushRunning = httpPushState.isRunning
+    val isFtpRunning = ftpState.isRunning
+    val isActive = isPushRunning || isFtpRunning
+
+    val pillText = when {
+        isPushRunning && httpPushState.photosReceivedCount > 0 -> "Wi-Fi: ${httpPushState.photosReceivedCount} 📷"
+        isPushRunning -> "Push :${httpPushState.port}"
+        isFtpRunning -> "FTP :${ftpState.port}"
+        else -> "WiFi"
+    }
+
     Surface(
         modifier = Modifier
             .padding(end = 4.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        color = if (isRunning) Color(0xFF1E88E5).copy(alpha = 0.2f) else Color.DarkGray.copy(alpha = 0.35f),
-        border = if (isRunning) BorderStroke(1.dp, Color(0xFF1E88E5)) else BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f))
+        color = if (isActive) Color(0xFF1E88E5).copy(alpha = 0.2f) else Color.DarkGray.copy(alpha = 0.35f),
+        border = if (isActive) BorderStroke(1.dp, Color(0xFF1E88E5)) else BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
@@ -802,17 +817,17 @@ private fun WifiFtpStatusPill(
         ) {
             Icon(
                 imageVector = Icons.Default.Wifi,
-                contentDescription = "WiFi FTP",
-                tint = if (isRunning) Color(0xFF1E88E5) else Color.LightGray,
+                contentDescription = "WiFi",
+                tint = if (isActive) Color(0xFF1E88E5) else Color.LightGray,
                 modifier = Modifier.size(13.dp)
             )
             Text(
-                text = if (isRunning) "FTP :${ftpState.port}" else "WiFi",
+                text = pillText,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
-                color = if (isRunning) Color(0xFF1E88E5) else Color.LightGray
+                color = if (isActive) Color(0xFF1E88E5) else Color.LightGray
             )
-            if (isRunning) {
+            if (isActive) {
                 Box(
                     modifier = Modifier
                         .size(6.dp)

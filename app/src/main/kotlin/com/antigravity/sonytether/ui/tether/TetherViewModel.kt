@@ -47,6 +47,11 @@ class TetherViewModel(application: Application) : AndroidViewModel(application) 
     val currentVersionName: String get() = engine.updateManager.currentVersionName
     val ftpServerState: StateFlow<com.antigravity.sonytether.network.FtpServerState> = engine.ftpServerState
     val ptpIpState: StateFlow<com.antigravity.sonytether.network.PtpIpClientState> = engine.ptpIpState
+    val httpPushState: StateFlow<com.antigravity.sonytether.network.HttpPushServerState> = engine.httpPushState
+
+    fun toggleHttpPushServer(port: Int = com.antigravity.sonytether.network.DEFAULT_HTTP_PUSH_PORT) {
+        engine.toggleHttpPushServer(port)
+    }
 
     fun toggleFtpServer(port: Int = com.antigravity.sonytether.network.DEFAULT_FTP_PORT) {
         engine.toggleFtpServer(port)

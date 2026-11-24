@@ -121,6 +121,64 @@ class TetherEngine(private val context: Context) {
     )
     val ptpIpState: StateFlow<com.antigravity.sonytether.network.PtpIpClientState> = ptpIpClient.state
 
+    // Micro-servidor HTTP Push + Responder de descubrimiento UDP para Sony a6400 (y compatibles con sd_payload)
+    val httpPushServer = com.antigravity.sonytether.network.SonyHttpPushServer(
+        context = context,
+        onPhotoReceived = { file, fileName ->
+            processHttpPushPhoto(file, fileName)
+        },
+        onLog = { addLog(it) }
+    )
+    val httpPushState: StateFlow<com.antigravity.sonytether.network.HttpPushServerState> = httpPushServer.state
+
+    val udpDiscoveryResponder = com.antigravity.sonytether.network.UdpDiscoveryResponder(
+        onLog = { addLog(it) }
+    )
+
+    fun startHttpPushServer(port: Int = com.antigravity.sonytether.network.DEFAULT_HTTP_PUSH_PORT) {
+        httpPushServer.start(port)
+        udpDiscoveryResponder.start(httpPort = port)
+    }
+
+    fun stopHttpPushServer() {
+        httpPushServer.stop()
+        udpDiscoveryResponder.stop()
+    }
+
+    fun toggleHttpPushServer(port: Int = com.antigravity.sonytether.network.DEFAULT_HTTP_PUSH_PORT) {
+        if (httpPushServer.state.value.isRunning) {
+            stopHttpPushServer()
+        } else {
+            startHttpPushServer(port)
+        }
+    }
+
+    private fun processHttpPushPhoto(sourceFile: java.io.File, fileName: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val eventName = _activeEventName.value
+                val saveRes = storageManager.saveOriginalFromFile(
+                    sourceFile = sourceFile,
+                    fileName = fileName,
+                    eventName = eventName,
+                    recentOriginalUris = recentOriginalUris
+                )
+                if (saveRes.isSuccess) {
+                    val origData = saveRes.getOrThrow()
+                    handleOriginalCaptured(origData, eventName, "wifi://http/$fileName")
+                } else {
+                    addLog("❌ Error guardando foto HTTP Push $fileName: ${saveRes.exceptionOrNull()?.message}")
+                }
+            } finally {
+                try {
+                    if (sourceFile.exists()) {
+                        sourceFile.delete()
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     fun connectPtpIp(cameraIp: String) {
         ptpIpClient.connect(cameraIp)
     }
@@ -767,5 +825,6 @@ class TetherEngine(private val context: Context) {
         usbMtpHelper.stopMonitoring()
         ftpServer.stop()
         ptpIpClient.disconnect()
+        stopHttpPushServer()
     }
 }

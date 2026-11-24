@@ -242,6 +242,105 @@ class PhotoStorageManager(private val context: Context) {
     }
 
     /**
+     * Guarda la foto ORIGINAL recibida vía Wi-Fi HTTP Push desde un archivo temporal directo a MediaStore
+     * sin mantener buffers duplicados en RAM durante la descarga de red.
+     */
+    suspend fun saveOriginalFromFile(
+        sourceFile: java.io.File,
+        fileName: String,
+        eventName: String,
+        recentOriginalUris: MutableList<Uri>
+    ): Result<SavedOriginalResult> = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
+        try {
+            val sanitizedEvent = sanitizeFolderName(eventName)
+            val originalRelativeFolder = "${Environment.DIRECTORY_PICTURES}/$BASE_FOLDER/$sanitizedEvent"
+            val resolver = context.contentResolver
+            val fileSize = sourceFile.length()
+
+            val originalValues = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, originalRelativeFolder)
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+
+            val originalUri: Uri = resolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                originalValues
+            ) ?: return@withContext Result.failure(Exception("No se pudo crear entrada original en MediaStore"))
+
+            // Streaming directo de archivo a MediaStore sin cargar 15 MB en RAM
+            java.io.FileInputStream(sourceFile).use { input ->
+                resolver.openOutputStream(originalUri)?.use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                    }
+                    output.flush()
+                } ?: return@withContext Result.failure(Exception("No se pudo abrir output stream para foto original"))
+            }
+
+            val exif = try {
+                android.media.ExifInterface(sourceFile.absolutePath)
+            } catch (e: Throwable) {
+                Log.w(TAG, "No se pudo leer EXIF desde archivo: ${e.message}")
+                null
+            }
+
+            val exifOrientation = exif?.getAttributeInt(
+                android.media.ExifInterface.TAG_ORIENTATION,
+                android.media.ExifInterface.ORIENTATION_NORMAL
+            ) ?: android.media.ExifInterface.ORIENTATION_NORMAL
+
+            val rotationDegrees = when (exifOrientation) {
+                android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                originalValues.clear()
+                originalValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                originalValues.put(MediaStore.Images.Media.ORIENTATION, rotationDegrees)
+                resolver.update(originalUri, originalValues, null, null)
+            }
+
+            val durationMs = System.currentTimeMillis() - startTime
+            val originalPhoto = TetheredPhoto(
+                id = UUID.randomUUID().toString(),
+                fileName = fileName,
+                remoteUrl = "wifi://http/$fileName",
+                localUri = originalUri,
+                fileSizeBytes = fileSize,
+                timestamp = System.currentTimeMillis(),
+                status = DownloadStatus.COMPLETED,
+                downloadDurationMs = durationMs
+            )
+
+            recentOriginalUris.add(originalUri)
+            while (recentOriginalUris.size > 5) {
+                val oldUri = recentOriginalUris.removeAt(0)
+                try {
+                    resolver.delete(oldUri, null, null)
+                } catch (_: Exception) {}
+            }
+
+            // Cargar los bytes únicamente para el pipeline posterior (Presets, Momentia, B&N)
+            val bytes = sourceFile.readBytes()
+
+            Result.success(SavedOriginalResult(originalPhoto, bytes, rotationDegrees, fileName))
+        } catch (e: Exception) {
+            Log.e(TAG, "Error guardando foto original desde archivo", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Procesa la foto original aplicando la orientación física correcta y el preset
      * guardándola en Pictures/SonyA6400_Tether/<Evento>/Editadas/ y notificando para subida a Momentia.
      */

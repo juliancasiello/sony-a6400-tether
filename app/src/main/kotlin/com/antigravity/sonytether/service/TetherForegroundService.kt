@@ -77,6 +77,7 @@ class TetherForegroundService : Service() {
         acquireWakeLock()
         val engine = TetherEngine.getInstance(this)
         engine.startUsbTethering()
+        engine.startHttpPushServer()
         return START_STICKY
     }
 
@@ -105,6 +106,7 @@ class TetherForegroundService : Service() {
             Log.e(TAG, "Error iniciando startForeground: ${e.message}", e)
         }
 
+        TetherEngine.getInstance(this).startHttpPushServer()
         observeEngineState()
     }
 
@@ -197,6 +199,13 @@ class TetherForegroundService : Service() {
             }
         }
 
+        // Monitoreo de estado de Wi-Fi Push Server
+        serviceScope.launch {
+            engine.httpPushState.collectLatest {
+                updateOngoingNotification()
+            }
+        }
+
         // Monitoreo de nuevas ventas en tiempo real para Garmin y Celular
         serviceScope.launch {
             engine.onNewMomentiaSale.collect { sale ->
@@ -251,10 +260,13 @@ class TetherForegroundService : Service() {
                     hasAlertedLowBattery = false
                 }
 
-                val (title, statusText) = if (usbOk) {
-                    "✅ Sony Tether: Todo OK" to "USB Conectado"
-                } else {
-                    "⚠️ Sony Tether: Cable Desconectado" to "Esperando USB"
+                val (title, statusText) = when {
+                    usbOk -> "✅ Sony Tether: USB OK" to "USB Conectado"
+                    engine.httpPushState.value.isRunning && engine.httpPushState.value.photosReceivedCount > 0 ->
+                        "📡 Sony Tether: Wi-Fi Activo" to "Wi-Fi (${engine.httpPushState.value.photosReceivedCount} fotos)"
+                    engine.httpPushState.value.isRunning ->
+                        "📡 Sony Tether: Hotspot Listo" to "Hotspot :${engine.httpPushState.value.port}"
+                    else -> "⚠️ Sony Tether: Desconectado" to "Esperando conexión"
                 }
 
                 val counts = buildString {
@@ -290,14 +302,25 @@ class TetherForegroundService : Service() {
     private fun updateOngoingNotification() {
         val engine = TetherEngine.getInstance(this)
         val isUsb = engine.isUsbCameraConnected.value
+        val pushState = engine.httpPushState.value
         val momentiaState = engine.momentiaManager.state.value
         val lumepicState = engine.lumepicManager.state.value
         val eventName = engine.activeEventName.value
         val latest = engine.latestPhoto.value
 
         val camShort = engine.currentCameraModel.value.shortName
-        val title = if (isUsb) "📷 Sony $camShort Conectada" else "📷 Sony Alpha Tether"
+        val title = when {
+            isUsb -> "📷 Sony $camShort (USB)"
+            pushState.photosReceivedCount > 0 -> "📡 Sony $camShort (Wi-Fi Push: ${pushState.photosReceivedCount})"
+            pushState.isRunning -> "📡 Hotspot: ${pushState.localIp}:${pushState.port}"
+            else -> "📷 Sony Alpha Tether"
+        }
         val content = buildString {
+            if (pushState.isRunning) {
+                append("📡 ${pushState.localIp}:${pushState.port}")
+                if (pushState.photosReceivedCount > 0) append(" (📥${pushState.photosReceivedCount})")
+                append(" · ")
+            }
             append("📁 $eventName")
             if (momentiaState.isLoggedIn && momentiaState.isAutoUploadEnabled) {
                 append(" · M: ${momentiaState.uploadedCount}")

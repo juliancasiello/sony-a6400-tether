@@ -63,6 +63,7 @@ import com.antigravity.sonytether.model.SonyCameraDatabase
 import com.antigravity.sonytether.model.SonyCameraModel
 import com.antigravity.sonytether.model.UsbConnectorType
 import com.antigravity.sonytether.network.FtpServerState
+import com.antigravity.sonytether.network.HttpPushServerState
 import com.antigravity.sonytether.network.PtpIpClientState
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -71,9 +72,11 @@ fun CameraSelectorDialog(
     currentCamera: SonyCameraModel,
     ftpState: FtpServerState,
     ptpIpState: PtpIpClientState,
+    httpPushState: HttpPushServerState,
     onToggleFtpServer: () -> Unit,
     onConnectPtpIp: (String) -> Unit,
     onDisconnectPtpIp: () -> Unit,
+    onToggleHttpPushServer: () -> Unit,
     onSelectCamera: (SonyCameraModel) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -160,13 +163,15 @@ fun CameraSelectorDialog(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 if (selectedTab == 4) {
-                    // TAB 4: MODO INALÁMBRICO (WIFI / FTP)
+                    // TAB 4: MODO INALÁMBRICO (WIFI / FTP / PUSH)
                     WirelessGuideContent(
                         ftpState = ftpState,
                         ptpIpState = ptpIpState,
+                        httpPushState = httpPushState,
                         onToggleFtp = onToggleFtpServer,
                         onConnectPtpIp = onConnectPtpIp,
-                        onDisconnectPtpIp = onDisconnectPtpIp
+                        onDisconnectPtpIp = onDisconnectPtpIp,
+                        onToggleHttpPush = onToggleHttpPushServer
                     )
                 } else {
                     // BUSCADOR
@@ -410,14 +415,122 @@ private fun CameraCardItem(
 private fun WirelessGuideContent(
     ftpState: FtpServerState,
     ptpIpState: PtpIpClientState,
+    httpPushState: HttpPushServerState,
     onToggleFtp: () -> Unit,
     onConnectPtpIp: (String) -> Unit,
-    onDisconnectPtpIp: () -> Unit
+    onDisconnectPtpIp: () -> Unit,
+    onToggleHttpPush: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // CARD: SONY A6400 (MODO HOTSPOT WI-FI PUSH)
+        item {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (httpPushState.isRunning) Color(0xFF00C853).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, if (httpPushState.isRunning) Color(0xFF00C853) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(
+                                        color = if (httpPushState.isRunning) Color(0xFF00C853) else Color.Gray,
+                                        shape = CircleShape
+                                    )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (httpPushState.isRunning) "a6400 Wi-Fi Push ACTIVO" else "a6400 Wi-Fi Push (Hotspot)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (httpPushState.isRunning) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Button(
+                            onClick = onToggleHttpPush,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (httpPushState.isRunning) Color(0xFFD32F2F) else Color(0xFF1E88E5)
+                            )
+                        ) {
+                            Text(if (httpPushState.isRunning) "Detener" else "Activar")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Para Sony a6400 con script SD (DevCrashDay). La cámara conecta al Hotspot del teléfono y envía cada JPG de 24 MP al disparar.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (httpPushState.isRunning) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("IP del Teléfono (Hotspot):", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text(httpPushState.localIp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Puerto HTTP Push:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text("${httpPushState.port}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Descubrimiento UDP:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text("Puerto 8081 (Auto)", fontWeight = FontWeight.Bold, color = Color(0xFF00C853), fontSize = 13.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Fotos recibidas:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text("${httpPushState.photosReceivedCount}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+                                }
+                                if (httpPushState.lastReceivedFileName != null) {
+                                    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                        Text("Última foto:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        Text(httpPushState.lastReceivedFileName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "💡 Pasos en la a6400:\n" +
+                                   "1. Copiá el contenido de 'sd_payload/' a tu SD FAT32.\n" +
+                                   "2. Editá 'wpa.conf' con el nombre y contraseña de tu Hotspot.\n" +
+                                   "3. Prendé la a6400 y dispará. Se transferirán automáticamente.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (!httpPushState.errorMessage.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Error: ${httpPushState.errorMessage}",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
         item {
             Card(
                 colors = CardDefaults.cardColors(
