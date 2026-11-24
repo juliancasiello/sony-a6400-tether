@@ -1,0 +1,3 @@
+# Enforce LF for shell scripts and sd_payload files
+*.sh text eol=lf
+sd_payload/* text eol=lf
